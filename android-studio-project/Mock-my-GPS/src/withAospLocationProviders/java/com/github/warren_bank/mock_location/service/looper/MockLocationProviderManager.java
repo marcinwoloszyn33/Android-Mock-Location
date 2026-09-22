@@ -8,11 +8,19 @@ public class MockLocationProviderManager {
         AospMockLocationProviderManager.startMockingLocation(context);
     }
 
-    protected static void exec(double lat, double lon) {
-        AospMockLocationProviderManager.exec(lat, lon);
+    protected static boolean exec(MockLocationFix fix) {
+        return AospMockLocationProviderManager.exec(fix);
     }
 
     protected static void stopMockingLocation() {
         AospMockLocationProviderManager.stopMockingLocation();
+    }
+
+    public static ProviderStatus getProviderStatus(Context context) {
+        return AospMockLocationProviderManager.getProviderStatus(
+            "Not included in this build",
+            false,
+            false
+        );
     }
 }

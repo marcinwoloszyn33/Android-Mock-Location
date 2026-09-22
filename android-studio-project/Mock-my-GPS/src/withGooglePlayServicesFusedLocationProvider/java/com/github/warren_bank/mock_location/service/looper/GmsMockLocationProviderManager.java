@@ -11,13 +11,26 @@ import android.location.Location;
 public class GmsMockLocationProviderManager {
 
     private static FusedLocationProviderClient client = null;
-    private static int advanceTimeMillis              = 45000;
+    private static int advanceTimeMillis = 45000;
+
+    protected static boolean isAvailable(Context context) {
+        try {
+            return GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context)
+                == ConnectionResult.SUCCESS;
+        }
+        catch (Exception e) {
+            return false;
+        }
+    }
+
+    protected static boolean isActive() {
+        return client != null;
+    }
 
     protected static void startMockingLocation(Context context) {
-        if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) != ConnectionResult.SUCCESS)
-            return;
-
         stopMockingLocation();
+
+        if (!isAvailable(context)) return;
 
         try {
             client = LocationServices.getFusedLocationProviderClient(context);
@@ -28,13 +41,16 @@ public class GmsMockLocationProviderManager {
         }
     }
 
-    protected static void exec(double lat, double lon) {
-        if (client != null) {
-            try {
-                Location mockLocation = MockLocationProvider.getLocation(lat, lon, advanceTimeMillis);
-                client.setMockLocation(mockLocation);
-            }
-            catch (Exception e) {}
+    protected static boolean exec(MockLocationFix fix) {
+        if (client == null || fix == null) return false;
+
+        try {
+            Location mockLocation = MockLocationProvider.getLocation(fix, advanceTimeMillis);
+            client.setMockLocation(mockLocation);
+            return true;
+        }
+        catch (Exception e) {
+            return false;
         }
     }
 
@@ -43,7 +59,7 @@ public class GmsMockLocationProviderManager {
             try {
                 client.setMockMode(false);
             }
-            catch(Exception e) {}
+            catch (Exception e) {}
             client = null;
         }
     }

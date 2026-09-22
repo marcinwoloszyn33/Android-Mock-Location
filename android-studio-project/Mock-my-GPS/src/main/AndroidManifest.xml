@@ -30,6 +30,9 @@
     <!-- required to display notification for foreground service on API 33+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- optional aggressive keep-alive -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- custom signature-level permission -->
     <!-- required to bind to "LocationService" in "UnifiedNlp" backend plugin -->
     <uses-permission android:name="com.github.warren_bank.mock_location.service.microg_nlp_backend.LocationService.BIND" />
@@ -79,6 +82,11 @@
         <activity
             android:name=".ui.PreferencesActivity"
             android:configChanges="colorMode|density|fontScale|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
+            android:launchMode="standard"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.LeakCheckActivity"
             android:launchMode="standard"
             android:exported="false" />
 

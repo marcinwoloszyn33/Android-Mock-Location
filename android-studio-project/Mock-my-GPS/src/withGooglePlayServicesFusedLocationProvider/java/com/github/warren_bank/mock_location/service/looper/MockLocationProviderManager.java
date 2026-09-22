@@ -9,13 +9,22 @@ public class MockLocationProviderManager {
         GmsMockLocationProviderManager.startMockingLocation(context);
     }
 
-    protected static void exec(double lat, double lon) {
-        AospMockLocationProviderManager.exec(lat, lon);
-        GmsMockLocationProviderManager.exec(lat, lon);
+    protected static boolean exec(MockLocationFix fix) {
+        boolean aospSuccess = AospMockLocationProviderManager.exec(fix);
+        boolean gmsSuccess = GmsMockLocationProviderManager.exec(fix);
+        return aospSuccess || gmsSuccess;
     }
 
     protected static void stopMockingLocation() {
         AospMockLocationProviderManager.stopMockingLocation();
         GmsMockLocationProviderManager.stopMockingLocation();
+    }
+
+    public static ProviderStatus getProviderStatus(Context context) {
+        return AospMockLocationProviderManager.getProviderStatus(
+            "Google Play Services Fused",
+            GmsMockLocationProviderManager.isAvailable(context),
+            GmsMockLocationProviderManager.isActive()
+        );
     }
 }

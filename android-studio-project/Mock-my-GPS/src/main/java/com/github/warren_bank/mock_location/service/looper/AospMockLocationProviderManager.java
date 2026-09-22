@@ -1,8 +1,5 @@
 package com.github.warren_bank.mock_location.service.looper;
 
-// based on:
-//   https://github.com/mcastillof/FakeTraveler/blob/v1.6/app/src/main/java/cl/coders/faketraveler/MainActivity.java
-
 import com.github.warren_bank.mock_location.service.microg_nlp_backend.UnifiedNlpManager;
 
 import android.content.Context;
@@ -12,13 +9,10 @@ import android.os.Build;
 public class AospMockLocationProviderManager {
 
     private static MockLocationProvider mockNetwork = null;
-    private static MockLocationProvider mockGps     = null;
-    private static MockLocationProvider mockFused   = null;
-    private static UnifiedNlpManager    nlpManager  = null;
+    private static MockLocationProvider mockGps = null;
+    private static MockLocationProvider mockFused = null;
+    private static UnifiedNlpManager nlpManager = null;
 
-    /**
-     * Initialize instances of 'MockLocationProvider'.
-     */
     protected static void startMockingLocation(Context context) {
         startMockingLocationNetwork(context);
         startMockingLocationGps(context);
@@ -27,7 +21,12 @@ public class AospMockLocationProviderManager {
             startMockingLocationFused(context);
         }
 
-        nlpManager = new UnifiedNlpManager(context);
+        try {
+            nlpManager = new UnifiedNlpManager(context);
+        }
+        catch (Exception e) {
+            nlpManager = null;
+        }
     }
 
     private static void startMockingLocationNetwork(Context context) {
@@ -63,54 +62,66 @@ public class AospMockLocationProviderManager {
         }
     }
 
-    /**
-     * Set a mocked location.
-     *
-     * @param lat latitude
-     * @param lon longitude
-     */
-    protected static void exec(double lat, double lon) {
+    protected static boolean exec(MockLocationFix fix) {
+        if (fix == null) return false;
+
+        boolean success = false;
+
         if (mockNetwork != null) {
             try {
-                mockNetwork.pushLocation(lat, lon);
+                mockNetwork.pushLocation(fix);
+                success = true;
             }
-            catch (Exception e) {
-             // stopMockingLocationNetwork();
-            }
+            catch (Exception e) {}
         }
 
         if (mockGps != null) {
             try {
-                mockGps.pushLocation(lat, lon);
+                mockGps.pushLocation(fix);
+                success = true;
             }
-            catch (Exception e) {
-             // stopMockingLocationGps();
-            }
+            catch (Exception e) {}
         }
 
         if (mockFused != null) {
             try {
-                mockFused.pushLocation(lat, lon);
+                mockFused.pushLocation(fix);
+                success = true;
             }
-            catch (Exception e) {
-             // stopMockingLocationFused();
-            }
+            catch (Exception e) {}
         }
 
         if (nlpManager != null) {
-            nlpManager.update(lat, lon);
+            try {
+                nlpManager.update(fix.getLatitude(), fix.getLongitude());
+            }
+            catch (Exception e) {}
         }
+
+        return success;
     }
 
-    /**
-     * Destroy instances of 'MockLocationProvider'.
-     */
     protected static void stopMockingLocation() {
         stopMockingLocationNetwork();
         stopMockingLocationGps();
         stopMockingLocationFused();
-
         nlpManager = null;
+    }
+
+    protected static ProviderStatus getProviderStatus(
+        String vendorFusedName,
+        boolean vendorFusedSupported,
+        boolean vendorFusedActive
+    ) {
+        return new ProviderStatus(
+            mockGps != null,
+            mockNetwork != null,
+            Build.VERSION.SDK_INT >= 31,
+            mockFused != null,
+            vendorFusedName,
+            vendorFusedSupported,
+            vendorFusedActive
+        );
     }
 
     private static void stopMockingLocationNetwork() {
@@ -118,7 +129,7 @@ public class AospMockLocationProviderManager {
             try {
                 mockNetwork.shutdown();
             }
-            catch(Exception e) {}
+            catch (Exception e) {}
             mockNetwork = null;
         }
     }
@@ -128,7 +139,7 @@ public class AospMockLocationProviderManager {
             try {
                 mockGps.shutdown();
             }
-            catch(Exception e) {}
+            catch (Exception e) {}
             mockGps = null;
         }
     }
@@ -138,7 +149,7 @@ public class AospMockLocationProviderManager {
             try {
                 mockFused.shutdown();
             }
-            catch(Exception e) {}
+            catch (Exception e) {}
             mockFused = null;
         }
     }

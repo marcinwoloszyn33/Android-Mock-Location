@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_leak_title"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:paddingBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_leak_explanation"
+            android:paddingBottom="12dp" />
+
+        <TextView
+            android:id="@+id/leak_status_service"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:paddingBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_leak_mocked_heading"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:paddingTop="8dp"
+            android:paddingBottom="6dp" />
+
+        <TextView android:id="@+id/leak_status_gps"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingBottom="4dp" />
+        <TextView android:id="@+id/leak_status_network"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingBottom="4dp" />
+        <TextView android:id="@+id/leak_status_android_fused"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingBottom="4dp" />
+        <TextView android:id="@+id/leak_status_vendor_fused"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingBottom="4dp" />
+        <TextView android:id="@+id/leak_status_motion"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingBottom="4dp" />
+        <TextView android:id="@+id/leak_status_watchdog"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_leak_real_heading"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:paddingTop="8dp"
+            android:paddingBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_leak_real_list"
+            android:lineSpacingExtra="3dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_leak_mock_marker"
+            android:textStyle="bold"
+            android:paddingTop="12dp" />
+
+    </LinearLayout>
+</ScrollView>

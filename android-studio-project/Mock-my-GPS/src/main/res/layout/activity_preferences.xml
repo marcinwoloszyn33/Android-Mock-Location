@@ -12,12 +12,12 @@
         android:fitsSystemWindows="true"
         android:fillViewport="true"
         android:layout_gravity="left"
+        android:paddingBottom="16dp"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_alignParentTop="true"
         android:layout_alignParentStart="true">
 
-        <!-- heading_1 =========================================== -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -36,7 +36,6 @@
             android:layout_height="wrap_content"
             android:inputType="number|textMultiLine" />
 
-        <!-- heading_2 =========================================== -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -76,9 +75,8 @@
             android:id="@+id/input_fixed_joystick_increment"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="number|textMultiLine" />
+            android:inputType="numberDecimal|numberSigned" />
 
-        <!-- heading_3 =========================================== -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -96,7 +94,92 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
-        <!-- buttons ============================================= -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_heading"
+            style="@style/section_heading_textview" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_follow_label"
+            style="@style/input_label_textview" />
+
+        <CheckBox
+            android:id="@+id/input_follow_real_movement"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_follow_description"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp"
+            android:paddingBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_step_length_label"
+            style="@style/input_label_textview" />
+
+        <EditText
+            android:id="@+id/input_step_length_meters"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="numberDecimal" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_watchdog_label"
+            style="@style/input_label_textview" />
+
+        <CheckBox
+            android:id="@+id/input_watchdog_enabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_watchdog_timeout_label"
+            style="@style/input_label_textview" />
+
+        <EditText
+            android:id="@+id/input_watchdog_timeout_seconds"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_keep_alive_label"
+            style="@style/input_label_textview" />
+
+        <CheckBox
+            android:id="@+id/input_aggressive_keep_alive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_keep_alive_description"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp"
+            android:paddingBottom="8dp" />
+
+        <Button
+            android:id="@+id/button_leak_check"
+            android:layout_gravity="center_horizontal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/frmm_leak_check_button" />
+
         <LinearLayout
             android:layout_marginTop="10dp"
             android:orientation="horizontal"

@@ -1,14 +1,10 @@
 package com.github.warren_bank.mock_location.service.looper;
 
-// copied from:
-//   https://github.com/xiangtailiang/FakeGPS/blob/V1.1/app/src/main/java/com/github/fakegps/LocationThread.java
-
-import com.github.warren_bank.mock_location.data_model.LocPoint;
-
 import android.content.Context;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Process;
+import android.os.SystemClock;
 
 public class LocationThread extends HandlerThread {
     private Context mContext;
@@ -21,7 +17,7 @@ public class LocationThread extends HandlerThread {
 
         mContext = context;
         mLocationThreadManager = locationThreadManager;
-        mTimeInterval = timeInterval;
+        mTimeInterval = Math.max(50, timeInterval);
     }
 
     @Override
@@ -34,43 +30,88 @@ public class LocationThread extends HandlerThread {
 
     public void startThread() {
         MockLocationProviderManager.startMockingLocation(mContext);
-
         start();
     }
 
     public void stopThread() {
         MockLocationProviderManager.stopMockingLocation();
 
-        mHandler.removeCallbacksAndMessages(null);
+        if (mHandler != null) {
+            mHandler.removeCallbacksAndMessages(null);
+        }
+
         try {
             quit();
             interrupt();
         }
         catch (Exception e) {}
+
         mLocationThreadManager = null;
     }
 
     public void updateTimeInterval(int timeInterval) {
-        mTimeInterval = timeInterval;
+        mTimeInterval = Math.max(50, timeInterval);
     }
 
-    Runnable mUpdateLocation = new Runnable() {
+    private final Runnable mUpdateLocation = new Runnable() {
         @Override
         public void run() {
+            LocationThreadManager manager = mLocationThreadManager;
+            long nowMs = SystemClock.elapsedRealtime();
+
             try {
-                if (mLocationThreadManager != null) {
-                    LocPoint locPoint = mLocationThreadManager.getUpdateLocPoint();
-                    if (locPoint != null) {
-                        MockLocationProviderManager.exec(locPoint.getLatitude(), locPoint.getLongitude());
+                if (manager != null) {
+                    MockLocationFix fix = manager.getUpdateFix();
+                    boolean success = false;
+
+                    if (fix != null) {
+                        success = MockLocationProviderManager.exec(fix);
+                    }
+
+                    manager.onInjectionResult(success, nowMs);
+
+                    if (manager.shouldRecover(nowMs)) {
+                        recoverProviders(manager, nowMs);
                     }
                 }
-                if ((mLocationThreadManager != null) && mLocationThreadManager.shouldContinue()) {
-                    mHandler.postDelayed(mUpdateLocation, mTimeInterval);
+            }
+            catch (Exception e) {
+                manager = mLocationThreadManager;
+                if (manager != null) {
+                    manager.onInjectionResult(false, SystemClock.elapsedRealtime());
                 }
             }
-            catch(Exception e) {}
+            finally {
+                manager = mLocationThreadManager;
+                if (manager != null && manager.shouldContinue() && mHandler != null) {
+                    mHandler.postDelayed(this, mTimeInterval);
+                }
+            }
         }
     };
+
+    private void recoverProviders(LocationThreadManager manager, long nowMs) {
+        manager.markRecoveryStarted(nowMs);
+
+        boolean success = false;
+        try {
+            MockLocationProviderManager.stopMockingLocation();
+            MockLocationProviderManager.startMockingLocation(mContext);
+
+            MockLocationFix lastFix = manager.getLastFixForRecovery();
+            success = (lastFix != null) && MockLocationProviderManager.exec(lastFix);
+        }
+        catch (Exception e) {
+            success = false;
+        }
+
+        long finishedMs = SystemClock.elapsedRealtime();
+        manager.onInjectionResult(success, finishedMs);
+
+        if (success) {
+            manager.markRecoverySucceeded(finishedMs);
+        }
+    }
 
     public Handler getHandler() {
         return mHandler;

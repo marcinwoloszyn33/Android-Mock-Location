@@ -1,8 +1,11 @@
 package com.github.warren_bank.mock_location.service;
 
 import com.github.warren_bank.mock_location.R;
+import com.github.warren_bank.mock_location.data_model.EnhancedPrefs;
 import com.github.warren_bank.mock_location.data_model.LocPoint;
 import com.github.warren_bank.mock_location.service.looper.LocationThreadManager;
+import com.github.warren_bank.mock_location.service.recovery.MockSessionState;
+import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;
 import com.github.warren_bank.mock_location.ui.MainActivity;
 
 import android.app.Notification;
@@ -13,10 +16,9 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
-import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
-import android.view.View;
+import android.os.PowerManager;
 import android.widget.RemoteViews;
 
 public class LocationService extends Service {
@@ -33,8 +35,12 @@ public class LocationService extends Service {
     private static boolean running = false;
     private static LocationThreadManager LTM = null;
 
+    private PowerManager.WakeLock wakeLock;
+
     @Override
     public void onCreate() {
+        super.onCreate();
+
         LTM = LocationThreadManager.get();
         LTM.init(LocationService.this);
 
@@ -48,7 +54,7 @@ public class LocationService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        onStart(intent, startId);
+        processIntent(intent);
         return START_STICKY;
     }
 
@@ -59,11 +65,14 @@ public class LocationService extends Service {
 
     @Override
     public void onDestroy() {
+        running = false;
+        if (LTM != null && LTM.isStarted()) {
+            LTM.stop();
+        }
+        releaseWakeLock();
         hideNotification();
+        super.onDestroy();
     }
-
-    // -------------------------------------------------------------------------
-    // foregrounding..
 
     private String getNotificationChannelId() {
         return getPackageName();
@@ -71,9 +80,13 @@ public class LocationService extends Service {
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            String channelId       = getNotificationChannelId();
+            String channelId = getNotificationChannelId();
             NotificationManager NM = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            NotificationChannel NC = new NotificationChannel(channelId, channelId, NotificationManager.IMPORTANCE_HIGH);
+            NotificationChannel NC = new NotificationChannel(
+                channelId,
+                channelId,
+                NotificationManager.IMPORTANCE_HIGH
+            );
 
             NC.setDescription(channelId);
             NC.setSound(null, null);
@@ -112,11 +125,14 @@ public class LocationService extends Service {
         Notification notification;
 
         if (Build.VERSION.SDK_INT >= 26) {
-            Notification.Builder builder = new Notification.Builder(/* context= */ LocationService.this, /* channelId= */ getNotificationChannelId());
+            Notification.Builder builder = new Notification.Builder(
+                LocationService.this,
+                getNotificationChannelId()
+            );
 
             if (Build.VERSION.SDK_INT >= 31) {
                 builder.setContentTitle(getString(R.string.notification_service_content_line1));
-                builder.setContentText (getString(R.string.notification_service_content_line2));
+                builder.setContentText(getString(R.string.notification_service_content_line2));
                 builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
             }
 
@@ -133,23 +149,28 @@ public class LocationService extends Service {
         notification.icon          = R.drawable.launcher;
         notification.tickerText    = getString(R.string.notification_service_ticker);
         notification.contentIntent = getPendingIntent_MainActivity();
-     // notification.deleteIntent  = getPendingIntent_StopService();
 
         if (Build.VERSION.SDK_INT >= 16) {
-            notification.priority  = Notification.PRIORITY_HIGH;
+            notification.priority = Notification.PRIORITY_HIGH;
         }
         else {
-            notification.flags    |= Notification.FLAG_HIGH_PRIORITY;
+            notification.flags |= Notification.FLAG_HIGH_PRIORITY;
         }
 
         if (Build.VERSION.SDK_INT >= 21) {
             notification.visibility = Notification.VISIBILITY_PUBLIC;
         }
 
-        RemoteViews contentView    = new RemoteViews(getPackageName(), R.layout.service_notification);
+        RemoteViews contentView = new RemoteViews(getPackageName(), R.layout.service_notification);
         contentView.setImageViewResource(R.id.notification_icon, R.drawable.launcher);
-        contentView.setTextViewText(R.id.notification_text_line1, getString(R.string.notification_service_content_line1));
-        contentView.setTextViewText(R.id.notification_text_line2, getString(R.string.notification_service_content_line2));
+        contentView.setTextViewText(
+            R.id.notification_text_line1,
+            getString(R.string.notification_service_content_line1)
+        );
+        contentView.setTextViewText(
+            R.id.notification_text_line2,
+            getString(R.string.notification_service_content_line2)
+        );
 
         if (Build.VERSION.SDK_INT < 31)
             notification.contentView = contentView;
@@ -167,8 +188,8 @@ public class LocationService extends Service {
 
         String current_tab_tag = (!LTM.isFlyMode())
             ? getString(R.string.MainActivity_tab_1_tag)
-            : getString(R.string.MainActivity_tab_2_tag)
-        ;
+            : getString(R.string.MainActivity_tab_2_tag);
+
         intent.putExtra(getString(R.string.MainActivity_extra_current_tab_tag), current_tab_tag);
 
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
@@ -188,12 +209,11 @@ public class LocationService extends Service {
         return PendingIntent.getService(LocationService.this, 0, intent, flags);
     }
 
-    // -------------------------------------------------------------------------
-    // process inbound intents
-
     private void processIntent(Intent intent) {
-        if (intent == null)
+        if (intent == null) {
+            restoreActiveSessionIfPresent();
             return;
+        }
 
         String action = intent.getAction();
         if (action == null)
@@ -201,21 +221,54 @@ public class LocationService extends Service {
 
         switch (action) {
             case ACTION_START: {
-                running = true;
-                LTM.start(processIntentExtras(intent));
+                LocPoint origin = processIntentExtras(intent);
+                if (origin != null) {
+                    running = true;
+                    LTM.start(origin);
+                    refreshWakeLock();
+                }
                 break;
             }
+
             case ACTION_STOP: {
                 running = false;
+                MockSessionState.clear(LocationService.this);
+                releaseWakeLock();
                 LTM.stop();
                 stopSelf();
                 break;
             }
+
             case ACTION_PREFS: {
                 LTM.onSharedPrefsChange((short) 0);
+                refreshWakeLock();
                 break;
             }
         }
+    }
+
+    private void restoreActiveSessionIfPresent() {
+        if (running || (LTM != null && LTM.isStarted()))
+            return;
+
+        SessionSnapshot snapshot = MockSessionState.load(LocationService.this);
+        if (snapshot == null || !snapshot.active) {
+            stopSelf();
+            return;
+        }
+
+        EnhancedPrefs.restoreSessionValues(
+            LocationService.this,
+            snapshot.followRealMovement,
+            snapshot.stepLengthMeters,
+            snapshot.aggressiveKeepAlive
+        );
+
+        LTM.onSharedPrefsChange((short) 0);
+
+        running = true;
+        LTM.start(new LocPoint(snapshot.latitude, snapshot.longitude));
+        refreshWakeLock();
     }
 
     private LocPoint processIntentExtras(Intent intent) {
@@ -239,10 +292,57 @@ public class LocationService extends Service {
         return origin;
     }
 
-    // -------------------------------------------------------------------------
-    // static API for Activities that need to send intents to Service
+    private void refreshWakeLock() {
+        boolean shouldHold = running && EnhancedPrefs.getAggressiveKeepAlive(LocationService.this);
 
-    public static Intent doStart(Context context, boolean broadcast, LocPoint origin, LocPoint destination, int trip_duration) {
+        if (shouldHold) {
+            acquireWakeLock();
+        }
+        else {
+            releaseWakeLock();
+        }
+    }
+
+    private void acquireWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld())
+            return;
+
+        try {
+            PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+            if (powerManager == null) return;
+
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                getPackageName() + ":mock_location"
+            );
+            wakeLock.setReferenceCounted(false);
+            wakeLock.acquire();
+        }
+        catch (Exception e) {
+            wakeLock = null;
+        }
+    }
+
+    private void releaseWakeLock() {
+        if (wakeLock == null)
+            return;
+
+        try {
+            if (wakeLock.isHeld())
+                wakeLock.release();
+        }
+        catch (Exception e) {}
+
+        wakeLock = null;
+    }
+
+    public static Intent doStart(
+        Context context,
+        boolean broadcast,
+        LocPoint origin,
+        LocPoint destination,
+        int trip_duration
+    ) {
         if (origin == null)
             return null;
 
@@ -251,7 +351,12 @@ public class LocationService extends Service {
         return doAction(context, intent, ACTION_START, broadcast);
     }
 
-    private static void addIntentExtras(Intent intent, LocPoint origin, LocPoint destination, int trip_duration) {
+    private static void addIntentExtras(
+        Intent intent,
+        LocPoint origin,
+        LocPoint destination,
+        int trip_duration
+    ) {
         boolean is_trip = (destination != null) && (trip_duration > 0);
 
         intent.putExtra(EXTRA_ORIGIN_LAT, origin.getLatitude());
@@ -260,7 +365,7 @@ public class LocationService extends Service {
         if (is_trip) {
             intent.putExtra(EXTRA_DESTINATION_LAT, destination.getLatitude());
             intent.putExtra(EXTRA_DESTINATION_LON, destination.getLongitude());
-            intent.putExtra(EXTRA_TRIP_DURATION,   trip_duration);
+            intent.putExtra(EXTRA_TRIP_DURATION, trip_duration);
         }
     }
 
@@ -294,5 +399,4 @@ public class LocationService extends Service {
     public static LocationThreadManager getLocationThreadManager() {
         return LTM;
     }
-
 }

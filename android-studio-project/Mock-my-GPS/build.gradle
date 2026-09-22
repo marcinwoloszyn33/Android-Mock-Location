@@ -172,6 +172,7 @@ androidComponents {
 }
 
 dependencies {
+    testImplementation 'junit:junit:4.13.2'
     implementation project(':Mock-my-GPS-UnifiedNlp-Backend-artifacts')
 
     implementation 'com.google.code.gson:gson:'    + '2.8.6'                                                                    // (235 KB) https://mvnrepository.com/artifact/com.google.code.gson/gson

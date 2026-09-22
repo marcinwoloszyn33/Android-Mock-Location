@@ -1,0 +1,607 @@
+
+Welcome to Gradle 8.9!
+
+Here are the highlights of this release:
+ - Enhanced Error and Warning Messages
+ - IDE Integration Improvements
+ - Daemon JVM Information
+
+For more details see https://docs.gradle.org/8.9/release-notes.html
+
+Starting a Gradle Daemon (subsequent builds will be faster)
+> Task :Mock-my-GPS:preBuild UP-TO-DATE
+> Task :Mock-my-GPS:preEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugBuild UP-TO-DATE
+> Task :Mock-my-GPS:generateEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugBuildConfig
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:preBuild UP-TO-DATE
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:preDebugBuild UP-TO-DATE
+> Task :Mock-my-GPS:javaPreCompileEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug
+> Task :Mock-my-GPS:generateEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugResValues
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:generateDebugResValues
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:writeDebugAarMetadata
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:generateDebugResources
+> Task :Mock-my-GPS:checkEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugAarMetadata
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:packageDebugResources
+> Task :Mock-my-GPS:mapEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugSourceSetPaths
+> Task :Mock-my-GPS:generateEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugResources
+> Task :Mock-my-GPS:createEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugCompatibleScreenManifests
+> Task :Mock-my-GPS:extractDeepLinksEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:extractDeepLinksDebug
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:compileDebugLibraryResources
+
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:processDebugManifest
+package="com.github.warren_bank.mock_location.service.microg_nlp_backend.artifacts" found in source AndroidManifest.xml: /home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/libs/Mock-my-GPS-UnifiedNlp-Backend-artifacts/src/main/AndroidManifest.xml.
+Setting the namespace via the package attribute in the source AndroidManifest.xml is no longer supported, and the value is ignored.
+Recommendation: remove package="com.github.warren_bank.mock_location.service.microg_nlp_backend.artifacts" from the source AndroidManifest.xml: /home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/libs/Mock-my-GPS-UnifiedNlp-Backend-artifacts/src/main/AndroidManifest.xml.
+
+> Task :Mock-my-GPS:mergeEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugResources
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:parseDebugLocalResources
+
+> Task :Mock-my-GPS:processEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugMainManifest
+package="com.github.warren_bank.mock_location" found in source AndroidManifest.xml: /home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/main/AndroidManifest.xml.
+Setting the namespace via the package attribute in the source AndroidManifest.xml is no longer supported, and the value is ignored.
+Recommendation: remove package="com.github.warren_bank.mock_location" from the source AndroidManifest.xml: /home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/main/AndroidManifest.xml.
+
+> Task :Mock-my-GPS:processEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugManifest
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:generateDebugRFile
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:javaPreCompileDebug
+> Task :Mock-my-GPS:processEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugManifestForPackage
+> Task :Mock-my-GPS:preEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTestBuild UP-TO-DATE
+> Task :Mock-my-GPS:javaPreCompileEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest
+> Task :Mock-my-GPS:processEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugJavaRes NO-SOURCE
+> Task :Mock-my-GPS:processEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTestJavaRes NO-SOURCE
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:processDebugJavaRes NO-SOURCE
+> Task :Mock-my-GPS:processEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugResources
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:compileDebugAidl
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:compileDebugJavaWithJavac
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:bundleLibRuntimeToJarDebug
+> Task :Mock-my-GPS-UnifiedNlp-Backend-artifacts:bundleLibCompileToJarDebug
+
+> Task :Mock-my-GPS:compileEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugJavaWithJavac
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+> Task :Mock-my-GPS:bundleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugClassesToCompileJar
+> Task :Mock-my-GPS:bundleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugClassesToRuntimeJar
+
+> Task :Mock-my-GPS:compileEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTestJavaWithJavac FAILED
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:10: error: cannot find symbol
+        assertEquals(0.20d, EnhancedPrefs.clampStepLength(0.01d), 0d);
+                            ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:11: error: cannot find symbol
+        assertEquals(2.00d, EnhancedPrefs.clampStepLength(9d), 0d);
+                            ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:12: error: cannot find symbol
+        assertEquals(0.74d, EnhancedPrefs.clampStepLength(0.74d), 0d);
+                            ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:17: error: cannot find symbol
+        assertEquals(EnhancedPrefs.DEFAULT_STEP_LENGTH_METERS, EnhancedPrefs.clampStepLength(0d), 0d);
+                     ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:17: error: cannot find symbol
+        assertEquals(EnhancedPrefs.DEFAULT_STEP_LENGTH_METERS, EnhancedPrefs.clampStepLength(0d), 0d);
+                                                               ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:18: error: cannot find symbol
+        assertEquals(EnhancedPrefs.DEFAULT_STEP_LENGTH_METERS, EnhancedPrefs.clampStepLength(Double.NaN), 0d);
+                     ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:18: error: cannot find symbol
+        assertEquals(EnhancedPrefs.DEFAULT_STEP_LENGTH_METERS, EnhancedPrefs.clampStepLength(Double.NaN), 0d);
+                                                               ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:23: error: cannot find symbol
+        assertEquals(5, EnhancedPrefs.clampWatchdogTimeout(1));
+                        ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:24: error: cannot find symbol
+        assertEquals(120, EnhancedPrefs.clampWatchdogTimeout(999));
+                          ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/data_model/EnhancedPrefsTest.java:25: error: cannot find symbol
+        assertEquals(15, EnhancedPrefs.clampWatchdogTimeout(15));
+                         ^
+  symbol:   variable EnhancedPrefs
+  location: class EnhancedPrefsTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:10: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+        ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:10: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+                                    ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:17: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+        ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:17: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+                                    ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:24: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+        ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:24: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+                                    ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:33: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+        ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:33: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+                                    ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:37: error: package MockWatchdog does not exist
+        assertEquals(MockWatchdog.State.STOPPED, watchdog.getState());
+                                 ^
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:42: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+        ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:42: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+                                    ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:45: error: package MockWatchdog does not exist
+        assertEquals(MockWatchdog.State.RECOVERING, watchdog.getState());
+                                 ^
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:47: error: package MockWatchdog does not exist
+        assertEquals(MockWatchdog.State.ACTIVE, watchdog.getState());
+                                 ^
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:53: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+        ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/MockWatchdogTest.java:53: error: cannot find symbol
+        MockWatchdog watchdog = new MockWatchdog(true, 15000L, 5000L);
+                                    ^
+  symbol:   class MockWatchdog
+  location: class MockWatchdogTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:10: error: cannot find symbol
+        SessionSnapshot original = new SessionSnapshot(true, 52.2297d, 21.0122d, true, 0.81d, true);
+        ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:10: error: cannot find symbol
+        SessionSnapshot original = new SessionSnapshot(true, 52.2297d, 21.0122d, true, 0.81d, true);
+                                       ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:11: error: cannot find symbol
+        SessionSnapshot restored = SessionSnapshot.fromJson(original.toJson());
+        ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:11: error: cannot find symbol
+        SessionSnapshot restored = SessionSnapshot.fromJson(original.toJson());
+                                   ^
+  symbol:   variable SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:19: error: cannot find symbol
+        assertEquals(SessionSnapshot.MODE_FOLLOW_REAL_MOVEMENT, restored.mode);
+                     ^
+  symbol:   variable SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:24: error: cannot find symbol
+        SessionSnapshot snapshot = new SessionSnapshot(true, 200d, 21d, true, 0.74d, true);
+        ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:24: error: cannot find symbol
+        SessionSnapshot snapshot = new SessionSnapshot(true, 200d, 21d, true, 0.74d, true);
+                                       ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:32: error: cannot find symbol
+        SessionSnapshot snapshot = new SessionSnapshot(true, 52d, 21d, false, 0d, false);
+        ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:32: error: cannot find symbol
+        SessionSnapshot snapshot = new SessionSnapshot(true, 52d, 21d, false, 0d, false);
+                                       ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:33: error: cannot find symbol
+        assertEquals(SessionSnapshot.DEFAULT_STEP_LENGTH_METERS, snapshot.stepLengthMeters, 0d);
+                     ^
+  symbol:   variable SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:38: error: cannot find symbol
+        SessionSnapshot original = new SessionSnapshot(
+        ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:38: error: cannot find symbol
+        SessionSnapshot original = new SessionSnapshot(
+                                       ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:39: error: cannot find symbol
+            true, 52d, 21d, false, 0.74d, false, SessionSnapshot.MODE_TRIP
+                                                 ^
+  symbol:   variable SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:41: error: cannot find symbol
+        SessionSnapshot restored = SessionSnapshot.fromJson(original.toJson());
+        ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:41: error: cannot find symbol
+        SessionSnapshot restored = SessionSnapshot.fromJson(original.toJson());
+                                   ^
+  symbol:   variable SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:42: error: cannot find symbol
+        assertEquals(SessionSnapshot.MODE_TRIP, restored.mode);
+                     ^
+  symbol:   variable SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:47: error: cannot find symbol
+        SessionSnapshot snapshot = SessionSnapshot.fromJson("{not json");
+        ^
+  symbol:   class SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotTest.java:47: error: cannot find symbol
+        SessionSnapshot snapshot = SessionSnapshot.fromJson("{not json");
+                                   ^
+  symbol:   variable SessionSnapshot
+  location: class SessionSnapshotTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/GeoMoverTest.java:13: error: cannot find symbol
+        LocPoint out = GeoMover.move(start, 1.0d, 0f);
+                       ^
+  symbol:   variable GeoMover
+  location: class GeoMoverTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/GeoMoverTest.java:22: error: cannot find symbol
+        LocPoint out = GeoMover.move(start, 1.0d, 90f);
+                       ^
+  symbol:   variable GeoMover
+  location: class GeoMoverTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/GeoMoverTest.java:31: error: cannot find symbol
+        LocPoint south = GeoMover.move(start, 1.0d, 180f);
+                         ^
+  symbol:   variable GeoMover
+  location: class GeoMoverTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/GeoMoverTest.java:32: error: cannot find symbol
+        LocPoint west = GeoMover.move(start, 1.0d, 270f);
+                        ^
+  symbol:   variable GeoMover
+  location: class GeoMoverTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/GeoMoverTest.java:41: error: cannot find symbol
+        LocPoint out = GeoMover.move(start, 5.0d, 90f);
+                       ^
+  symbol:   variable GeoMover
+  location: class GeoMoverTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/GeoMoverTest.java:48: error: cannot find symbol
+        LocPoint out = GeoMover.move(start, -1.0d, 90f);
+                       ^
+  symbol:   variable GeoMover
+  location: class GeoMoverTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/StepDetectorTest.java:10: error: cannot find symbol
+        StepDetector detector = new StepDetector();
+        ^
+  symbol:   class StepDetector
+  location: class StepDetectorTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/StepDetectorTest.java:10: error: cannot find symbol
+        StepDetector detector = new StepDetector();
+                                    ^
+  symbol:   class StepDetector
+  location: class StepDetectorTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/StepDetectorTest.java:16: error: cannot find symbol
+        StepDetector detector = new StepDetector();
+        ^
+  symbol:   class StepDetector
+  location: class StepDetectorTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/StepDetectorTest.java:16: error: cannot find symbol
+        StepDetector detector = new StepDetector();
+                                    ^
+  symbol:   class StepDetector
+  location: class StepDetectorTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/StepDetectorTest.java:24: error: cannot find symbol
+        StepDetector detector = new StepDetector();
+        ^
+  symbol:   class StepDetector
+  location: class StepDetectorTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/StepDetectorTest.java:24: error: cannot find symbol
+        StepDetector detector = new StepDetector();
+                                    ^
+  symbol:   class StepDetector
+  location: class StepDetectorTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/StepDetectorTest.java:32: error: cannot find symbol
+        StepDetector detector = new StepDetector();
+        ^
+  symbol:   class StepDetector
+  location: class StepDetectorTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/StepDetectorTest.java:32: error: cannot find symbol
+        StepDetector detector = new StepDetector();
+                                    ^
+  symbol:   class StepDetector
+  location: class StepDetectorTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/HeadingFilterTest.java:10: error: cannot find symbol
+        HeadingFilter filter = new HeadingFilter(0.25f);
+        ^
+  symbol:   class HeadingFilter
+  location: class HeadingFilterTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/HeadingFilterTest.java:10: error: cannot find symbol
+        HeadingFilter filter = new HeadingFilter(0.25f);
+                                   ^
+  symbol:   class HeadingFilter
+  location: class HeadingFilterTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/HeadingFilterTest.java:19: error: cannot find symbol
+        assertEquals(359f, HeadingFilter.normalize(-1f), 0.0001f);
+                           ^
+  symbol:   variable HeadingFilter
+  location: class HeadingFilterTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/HeadingFilterTest.java:20: error: cannot find symbol
+        assertEquals(1f, HeadingFilter.normalize(361f), 0.0001f);
+                         ^
+  symbol:   variable HeadingFilter
+  location: class HeadingFilterTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/HeadingFilterTest.java:25: error: cannot find symbol
+        HeadingFilter filter = new HeadingFilter(0.25f);
+        ^
+  symbol:   class HeadingFilter
+  location: class HeadingFilterTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/HeadingFilterTest.java:25: error: cannot find symbol
+        HeadingFilter filter = new HeadingFilter(0.25f);
+                                   ^
+  symbol:   class HeadingFilter
+  location: class HeadingFilterTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/looper/MockLocationFixTest.java:10: error: cannot find symbol
+        MockLocationFix fix = new MockLocationFix(52d, 181d, 1f, 361f, 3f, 10d);
+        ^
+  symbol:   class MockLocationFix
+  location: class MockLocationFixTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/looper/MockLocationFixTest.java:10: error: cannot find symbol
+        MockLocationFix fix = new MockLocationFix(52d, 181d, 1f, 361f, 3f, 10d);
+                                  ^
+  symbol:   class MockLocationFix
+  location: class MockLocationFixTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/looper/MockLocationFixTest.java:17: error: cannot find symbol
+        MockLocationFix fix = new MockLocationFix(52d, 21d, -2f, 0f, -1f, Double.NaN);
+        ^
+  symbol:   class MockLocationFix
+  location: class MockLocationFixTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/looper/MockLocationFixTest.java:17: error: cannot find symbol
+        MockLocationFix fix = new MockLocationFix(52d, 21d, -2f, 0f, -1f, Double.NaN);
+                                  ^
+  symbol:   class MockLocationFix
+  location: class MockLocationFixTest
+/home/runner/work/Android-Mock-Location/Android-Mock-Location/android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/looper/MockLocationFixTest.java:25: error: cannot find symbol
+        new MockLocationFix(91d, 21d, 0f, 0f, 3f, 3d);
+            ^
+  symbol:   class MockLocationFix
+  location: class MockLocationFixTest
+68 errors
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':Mock-my-GPS:compileEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTestJavaWithJavac'.
+> Compilation failed; see the compiler error output for details.
+
+* Try:
+> Run with --info option to get more log output.
+> Run with --scan to get full insights.
+
+* Exception is:
+org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':Mock-my-GPS:compileEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTestJavaWithJavac'.
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:130)
+	at org.gradle.internal.Try$Failure.ifSuccessfulOrElse(Try.java:293)
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:128)
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.execute(ExecuteActionsTaskExecuter.java:116)
+	at org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter.execute(FinalizePropertiesTaskExecuter.java:46)
+	at org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecuter.execute(ResolveTaskExecutionModeExecuter.java:51)
+	at org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter.execute(SkipTaskWithNoActionsExecuter.java:57)
+	at org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter.execute(SkipOnlyIfTaskExecuter.java:74)
+	at org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter.execute(CatchExceptionTaskExecuter.java:36)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.executeTask(EventFiringTaskExecuter.java:77)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:55)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:52)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:209)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:166)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter.execute(EventFiringTaskExecuter.java:52)
+	at org.gradle.execution.plan.LocalTaskNodeExecutor.execute(LocalTaskNodeExecutor.java:42)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:331)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:318)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.lambda$execute$0(DefaultTaskExecutionGraph.java:314)
+	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBuildOperationRef.java:85)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:314)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
+	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:459)
+	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:376)
+	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
+Caused by: org.gradle.api.internal.tasks.compile.CompilationFailedException: Compilation failed; see the compiler error output for details.
+	at org.gradle.api.internal.tasks.compile.JdkJavaCompiler.execute(JdkJavaCompiler.java:79)
+	at org.gradle.api.internal.tasks.compile.JdkJavaCompiler.execute(JdkJavaCompiler.java:46)
+	at org.gradle.api.internal.tasks.compile.NormalizingJavaCompiler.delegateAndHandleErrors(NormalizingJavaCompiler.java:98)
+	at org.gradle.api.internal.tasks.compile.NormalizingJavaCompiler.execute(NormalizingJavaCompiler.java:52)
+	at org.gradle.api.internal.tasks.compile.NormalizingJavaCompiler.execute(NormalizingJavaCompiler.java:38)
+	at org.gradle.api.internal.tasks.compile.AnnotationProcessorDiscoveringCompiler.execute(AnnotationProcessorDiscoveringCompiler.java:52)
+	at org.gradle.api.internal.tasks.compile.AnnotationProcessorDiscoveringCompiler.execute(AnnotationProcessorDiscoveringCompiler.java:38)
+	at org.gradle.api.internal.tasks.compile.ModuleApplicationNameWritingCompiler.execute(ModuleApplicationNameWritingCompiler.java:46)
+	at org.gradle.api.internal.tasks.compile.ModuleApplicationNameWritingCompiler.execute(ModuleApplicationNameWritingCompiler.java:36)
+	at org.gradle.jvm.toolchain.internal.DefaultToolchainJavaCompiler.execute(DefaultToolchainJavaCompiler.java:57)
+	at org.gradle.api.tasks.compile.JavaCompile.lambda$createToolchainCompiler$3(JavaCompile.java:202)
+	at org.gradle.api.internal.tasks.compile.CleaningJavaCompiler.execute(CleaningJavaCompiler.java:53)
+	at org.gradle.api.internal.tasks.compile.incremental.IncrementalCompilerFactory.lambda$createRebuildAllCompiler$0(IncrementalCompilerFactory.java:52)
+	at org.gradle.api.internal.tasks.compile.incremental.SelectiveCompiler.execute(SelectiveCompiler.java:70)
+	at org.gradle.api.internal.tasks.compile.incremental.SelectiveCompiler.execute(SelectiveCompiler.java:44)
+	at org.gradle.api.internal.tasks.compile.incremental.IncrementalResultStoringCompiler.execute(IncrementalResultStoringCompiler.java:66)
+	at org.gradle.api.internal.tasks.compile.incremental.IncrementalResultStoringCompiler.execute(IncrementalResultStoringCompiler.java:52)
+	at org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationReportingCompiler$1.call(CompileJavaBuildOperationReportingCompiler.java:64)
+	at org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationReportingCompiler$1.call(CompileJavaBuildOperationReportingCompiler.java:48)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:209)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:166)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.api.internal.tasks.compile.CompileJavaBuildOperationReportingCompiler.execute(CompileJavaBuildOperationReportingCompiler.java:48)
+	at org.gradle.api.tasks.compile.JavaCompile.performCompilation(JavaCompile.java:220)
+	at org.gradle.api.tasks.compile.JavaCompile.performIncrementalCompilation(JavaCompile.java:161)
+	at org.gradle.api.tasks.compile.JavaCompile.compile(JavaCompile.java:146)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at org.gradle.internal.reflect.JavaMethod.invoke(JavaMethod.java:125)
+	at org.gradle.api.internal.project.taskfactory.IncrementalTaskAction.doExecute(IncrementalTaskAction.java:45)
+	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:51)
+	at org.gradle.api.internal.project.taskfactory.IncrementalTaskAction.execute(IncrementalTaskAction.java:26)
+	at org.gradle.api.internal.project.taskfactory.StandardTaskAction.execute(StandardTaskAction.java:29)
+	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:244)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:29)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:26)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:166)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.run(DefaultBuildOperationRunner.java:47)
+	at org.gradle.api.internal.tasks.execution.TaskExecution.executeAction(TaskExecution.java:229)
+	at org.gradle.api.internal.tasks.execution.TaskExecution.executeActions(TaskExecution.java:212)
+	at org.gradle.api.internal.tasks.execution.TaskExecution.executeWithPreviousOutputFiles(TaskExecution.java:195)
+	at org.gradle.api.internal.tasks.execution.TaskExecution.execute(TaskExecution.java:162)
+	at org.gradle.internal.execution.steps.ExecuteStep.executeInternal(ExecuteStep.java:105)
+	at org.gradle.internal.execution.steps.ExecuteStep.access$000(ExecuteStep.java:44)
+	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:59)
+	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:56)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:209)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:166)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:56)
+	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:44)
+	at org.gradle.internal.execution.steps.CancelExecutionStep.execute(CancelExecutionStep.java:42)
+	at org.gradle.internal.execution.steps.TimeoutStep.executeWithoutTimeout(TimeoutStep.java:75)
+	at org.gradle.internal.execution.steps.TimeoutStep.execute(TimeoutStep.java:55)
+	at org.gradle.internal.execution.steps.PreCreateOutputParentsStep.execute(PreCreateOutputParentsStep.java:50)
+	at org.gradle.internal.execution.steps.PreCreateOutputParentsStep.execute(PreCreateOutputParentsStep.java:28)
+	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:67)
+	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:37)
+	at org.gradle.internal.execution.steps.BroadcastChangingOutputsStep.execute(BroadcastChangingOutputsStep.java:61)
+	at org.gradle.internal.execution.steps.BroadcastChangingOutputsStep.execute(BroadcastChangingOutputsStep.java:26)
+	at org.gradle.internal.execution.steps.CaptureOutputsAfterExecutionStep.execute(CaptureOutputsAfterExecutionStep.java:69)
+	at org.gradle.internal.execution.steps.CaptureOutputsAfterExecutionStep.execute(CaptureOutputsAfterExecutionStep.java:46)
+	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:40)
+	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:29)
+	at org.gradle.internal.execution.steps.BuildCacheStep.executeWithoutCache(BuildCacheStep.java:189)
+	at org.gradle.internal.execution.steps.BuildCacheStep.lambda$execute$1(BuildCacheStep.java:75)
+	at org.gradle.internal.Either$Right.fold(Either.java:175)
+	at org.gradle.internal.execution.caching.CachingState.fold(CachingState.java:62)
+	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:73)
+	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:48)
+	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:46)
+	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:35)
+	at org.gradle.internal.execution.steps.SkipUpToDateStep.executeBecause(SkipUpToDateStep.java:75)
+	at org.gradle.internal.execution.steps.SkipUpToDateStep.lambda$execute$2(SkipUpToDateStep.java:53)
+	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:53)
+	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:35)
+	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:37)
+	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:27)
+	at org.gradle.internal.execution.steps.ResolveIncrementalCachingStateStep.executeDelegate(ResolveIncrementalCachingStateStep.java:49)
+	at org.gradle.internal.execution.steps.ResolveIncrementalCachingStateStep.executeDelegate(ResolveIncrementalCachingStateStep.java:27)
+	at org.gradle.internal.execution.steps.AbstractResolveCachingStateStep.execute(AbstractResolveCachingStateStep.java:71)
+	at org.gradle.internal.execution.steps.AbstractResolveCachingStateStep.execute(AbstractResolveCachingStateStep.java:39)
+	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:65)
+	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:36)
+	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:105)
+	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:54)
+	at org.gradle.internal.execution.steps.AbstractCaptureStateBeforeExecutionStep.execute(AbstractCaptureStateBeforeExecutionStep.java:64)
+	at org.gradle.internal.execution.steps.AbstractCaptureStateBeforeExecutionStep.execute(AbstractCaptureStateBeforeExecutionStep.java:43)
+	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.executeWithNonEmptySources(AbstractSkipEmptyWorkStep.java:125)
+	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.execute(AbstractSkipEmptyWorkStep.java:61)
+	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.execute(AbstractSkipEmptyWorkStep.java:36)
+	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsStartedStep.execute(MarkSnapshottingInputsStartedStep.java:38)
+	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:36)
+	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:23)
+	at org.gradle.internal.execution.steps.HandleStaleOutputsStep.execute(HandleStaleOutputsStep.java:75)
+	at org.gradle.internal.execution.steps.HandleStaleOutputsStep.execute(HandleStaleOutputsStep.java:41)
+	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.lambda$execute$0(AssignMutableWorkspaceStep.java:35)
+	at org.gradle.api.internal.tasks.execution.TaskExecution$4.withWorkspace(TaskExecution.java:289)
+	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.execute(AssignMutableWorkspaceStep.java:31)
+	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.execute(AssignMutableWorkspaceStep.java:22)
+	at org.gradle.internal.execution.steps.ChoosePipelineStep.execute(ChoosePipelineStep.java:40)
+	at org.gradle.internal.execution.steps.ChoosePipelineStep.execute(ChoosePipelineStep.java:23)
+	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.lambda$execute$2(ExecuteWorkBuildOperationFiringStep.java:67)
+	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.execute(ExecuteWorkBuildOperationFiringStep.java:67)
+	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.execute(ExecuteWorkBuildOperationFiringStep.java:39)
+	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityCacheStep.java:46)
+	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityCacheStep.java:34)
+	at org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:48)
+	at org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:35)
+	at org.gradle.internal.execution.impl.DefaultExecutionEngine$1.execute(DefaultExecutionEngine.java:61)
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:127)
+	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.execute(ExecuteActionsTaskExecuter.java:116)
+	at org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter.execute(FinalizePropertiesTaskExecuter.java:46)
+	at org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecuter.execute(ResolveTaskExecutionModeExecuter.java:51)
+	at org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter.execute(SkipTaskWithNoActionsExecuter.java:57)
+	at org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter.execute(SkipOnlyIfTaskExecuter.java:74)
+	at org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter.execute(CatchExceptionTaskExecuter.java:36)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.executeTask(EventFiringTaskExecuter.java:77)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:55)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:52)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:209)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:204)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:66)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:166)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:59)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:53)
+	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter.execute(EventFiringTaskExecuter.java:52)
+	at org.gradle.execution.plan.LocalTaskNodeExecutor.execute(LocalTaskNodeExecutor.java:42)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:331)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:318)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.lambda$execute$0(DefaultTaskExecutionGraph.java:314)
+	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBuildOperationRef.java:85)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:314)
+	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
+	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:459)
+	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:376)
+	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
+
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.9/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 19s
+32 actionable tasks: 32 executed

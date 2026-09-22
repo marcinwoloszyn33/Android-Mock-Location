@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="frmm_heading">Enhanced spoofing</string>
+    <string name="frmm_follow_label">Follow real movement</string>
+    <string name="frmm_follow_description">Moves the fake position by detected real walking steps using the accelerometer and magnetometer. It never replaces the fake anchor with your real GPS coordinates.</string>
+    <string name="frmm_step_length_label">Step length (meters; 0.20–2.00, default 0.74)</string>
+    <string name="frmm_watchdog_label">Anti-stop watchdog</string>
+    <string name="frmm_watchdog_timeout_label">Watchdog timeout (seconds; 5–120, default 15)</string>
+    <string name="frmm_keep_alive_label">Aggressive keep-alive</string>
+    <string name="frmm_keep_alive_description">Uses a partial wake lock while spoofing. This can improve persistence with the screen off, but increases battery use.</string>
+    <string name="frmm_leak_check_button">Leak Check</string>
+    <string name="frmm_leak_title">Leak Check</string>
+    <string name="frmm_leak_explanation">This screen reports what this build can control. It does not guarantee that every app sees only the fake location.</string>
+    <string name="frmm_leak_mocked_heading">Mock-location paths controlled by this build</string>
+    <string name="frmm_leak_real_heading">Still real / not globally spoofed without root or system privileges</string>
+    <string name="frmm_leak_real_list">• Wi‑Fi scan environment / BSSIDs\n• Cellular towers / CellInfo\n• Bluetooth scan environment\n• Raw GNSS measurements / NMEA\n• IP-based geolocation</string>
+    <string name="frmm_leak_mock_marker">Android may still mark these Location objects as mock. This build does not try to hide that marker.</string>
+</resources>
