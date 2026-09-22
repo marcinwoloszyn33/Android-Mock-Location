@@ -8,6 +8,7 @@ import com.github.warren_bank.mock_location.event_hooks.ISharedPrefsListener;
 import com.github.warren_bank.mock_location.security_model.RuntimePermissions;
 import com.github.warren_bank.mock_location.service.LocationService;
 import com.github.warren_bank.mock_location.service.motion.GeoMover;
+import com.github.warren_bank.mock_location.service.motion.MotionControlPolicy;
 import com.github.warren_bank.mock_location.service.motion.RelativeMotionTracker;
 import com.github.warren_bank.mock_location.service.recovery.MockSessionState;
 import com.github.warren_bank.mock_location.service.recovery.MockWatchdog;
@@ -311,29 +312,41 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     @Override
     public void onArrowUpClick() {
         synchronized (mLock) {
+            if (mCurrentLocPoint == null) return;
             mCurrentLocPoint.setLatitude(mCurrentLocPoint.getLatitude() + mFixedJoystickIncrement);
+            mCurrentSpeedMps = 0f;
         }
+        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
     }
 
     @Override
     public void onArrowDownClick() {
         synchronized (mLock) {
+            if (mCurrentLocPoint == null) return;
             mCurrentLocPoint.setLatitude(mCurrentLocPoint.getLatitude() - mFixedJoystickIncrement);
+            mCurrentSpeedMps = 0f;
         }
+        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
     }
 
     @Override
     public void onArrowLeftClick() {
         synchronized (mLock) {
+            if (mCurrentLocPoint == null) return;
             mCurrentLocPoint.setLongitude(mCurrentLocPoint.getLongitude() - mFixedJoystickIncrement);
+            mCurrentSpeedMps = 0f;
         }
+        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
     }
 
     @Override
     public void onArrowRightClick() {
         synchronized (mLock) {
+            if (mCurrentLocPoint == null) return;
             mCurrentLocPoint.setLongitude(mCurrentLocPoint.getLongitude() + mFixedJoystickIncrement);
+            mCurrentSpeedMps = 0f;
         }
+        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
     }
 
     @Override
@@ -471,11 +484,13 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         boolean started;
         boolean follow;
         boolean fly;
+        boolean joystickEnabled;
 
         synchronized (mLock) {
             started = mIsStarted;
             follow = mFollowRealMovementEnabled;
             fly = mIsFlyMode;
+            joystickEnabled = mFixedJoystickEnabled;
         }
 
         if (!started) {
@@ -485,18 +500,25 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         }
 
         if (follow) {
-            hideJoyStick();
             if (mRelativeMotionTracker != null) mRelativeMotionTracker.start();
         }
         else {
             if (mRelativeMotionTracker != null) mRelativeMotionTracker.stop();
+        }
 
-            if (!fly && mFixedJoystickEnabled && RuntimePermissions.canDrawOverlays(mContext)) {
-                showJoyStick();
-            }
-            else {
-                hideJoyStick();
-            }
+        boolean showJoystick = MotionControlPolicy.shouldShowJoystick(
+            started,
+            follow,
+            fly,
+            joystickEnabled,
+            RuntimePermissions.canDrawOverlays(mContext)
+        );
+
+        if (showJoystick) {
+            showJoyStick();
+        }
+        else {
+            hideJoyStick();
         }
     }
 

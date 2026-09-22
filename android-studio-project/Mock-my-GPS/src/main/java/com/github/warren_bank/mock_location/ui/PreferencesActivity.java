@@ -6,17 +6,23 @@ import com.github.warren_bank.mock_location.data_model.SharedPrefs;
 import com.github.warren_bank.mock_location.data_model.SharedPrefsState;
 import com.github.warren_bank.mock_location.service.LocationService;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
 public class PreferencesActivity extends Activity {
+    private static final int REQUEST_ACTIVITY_RECOGNITION = 4201;
+
     private SharedPrefsState originalState;
 
     private boolean originalFollowRealMovement;
@@ -71,6 +77,19 @@ public class PreferencesActivity extends Activity {
         button_save = (Button) findViewById(R.id.button_save);
 
         reset();
+
+        input_follow_real_movement.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                if (isChecked) {
+                    requestActivityRecognitionPermissionIfNeeded();
+                }
+            }
+        });
+
+        if (input_follow_real_movement.isChecked()) {
+            requestActivityRecognitionPermissionIfNeeded();
+        }
 
         button_leak_check.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -255,6 +274,19 @@ public class PreferencesActivity extends Activity {
         input_watchdog_enabled.setChecked(originalWatchdogEnabled);
         input_watchdog_timeout_seconds.setText(Integer.toString(originalWatchdogTimeoutSeconds, 10));
         input_aggressive_keep_alive.setChecked(originalAggressiveKeepAlive);
+    }
+
+    private void requestActivityRecognitionPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return;
+
+        if (checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+
+        requestPermissions(
+            new String[] { Manifest.permission.ACTIVITY_RECOGNITION },
+            REQUEST_ACTIVITY_RECOGNITION
+        );
     }
 
     private void showError(String text) {

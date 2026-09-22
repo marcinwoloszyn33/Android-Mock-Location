@@ -33,6 +33,8 @@
     <!-- optional aggressive keep-alive -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
     <!-- custom signature-level permission -->
     <!-- required to bind to "LocationService" in "UnifiedNlp" backend plugin -->
     <uses-permission android:name="com.github.warren_bank.mock_location.service.microg_nlp_backend.LocationService.BIND" />

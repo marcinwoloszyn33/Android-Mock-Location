@@ -1,10 +1,13 @@
 package com.github.warren_bank.mock_location.service.motion;
 
+import android.Manifest;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.os.Build;
 import android.os.SystemClock;
 
 public final class RelativeMotionTracker implements SensorEventListener {
@@ -16,11 +19,16 @@ public final class RelativeMotionTracker implements SensorEventListener {
     private static final float MIN_MAGNETIC_FIELD_UT = 15f;
     private static final float MAX_MAGNETIC_FIELD_UT = 100f;
 
+    private final Context appContext;
     private final SensorManager sensorManager;
     private final Sensor accelerometer;
     private final Sensor magnetometer;
+    private final Sensor hardwareStepDetector;
     private final Listener listener;
-    private final StepDetector stepDetector = new StepDetector();
+
+    // Deliberately stricter than V3 when the hardware step detector is unavailable.
+    private final StepDetector fallbackStepDetector = new StepDetector(1.65f, 0.45f, 300L);
+    private final FallbackCadenceGate fallbackCadenceGate = new FallbackCadenceGate();
     private final HeadingFilter headingFilter = new HeadingFilter(0.25f);
 
     private final float[] gravity = new float[3];
@@ -32,12 +40,15 @@ public final class RelativeMotionTracker implements SensorEventListener {
     private boolean haveMagnetic;
     private boolean haveHeading;
     private boolean running;
+    private boolean usingHardwareStepDetector;
     private float filteredHeading;
 
     public RelativeMotionTracker(Context context, Listener listener) {
-        sensorManager = (SensorManager) context.getApplicationContext().getSystemService(Context.SENSOR_SERVICE);
+        appContext = context.getApplicationContext();
+        sensorManager = (SensorManager) appContext.getSystemService(Context.SENSOR_SERVICE);
         accelerometer = (sensorManager != null) ? sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) : null;
         magnetometer = (sensorManager != null) ? sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) : null;
+        hardwareStepDetector = (sensorManager != null) ? sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR) : null;
         this.listener = listener;
     }
 
@@ -51,8 +62,30 @@ public final class RelativeMotionTracker implements SensorEventListener {
         boolean magneticOk = sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_GAME);
 
         running = accelOk && magneticOk;
-        if (!running) sensorManager.unregisterListener(this);
-        return running;
+        if (!running) {
+            sensorManager.unregisterListener(this);
+            return false;
+        }
+
+        boolean hardwareEligible = MotionControlPolicy.shouldUseHardwareStepDetector(
+            hardwareStepDetector != null,
+            hasActivityRecognitionPermission()
+        );
+
+        if (hardwareEligible) {
+            try {
+                usingHardwareStepDetector = sensorManager.registerListener(
+                    this,
+                    hardwareStepDetector,
+                    SensorManager.SENSOR_DELAY_NORMAL
+                );
+            }
+            catch (SecurityException e) {
+                usingHardwareStepDetector = false;
+            }
+        }
+
+        return true;
     }
 
     public synchronized void stop() {
@@ -69,11 +102,22 @@ public final class RelativeMotionTracker implements SensorEventListener {
         return sensorManager != null && accelerometer != null && magnetometer != null;
     }
 
+    public synchronized boolean isUsingHardwareStepDetector() {
+        return usingHardwareStepDetector;
+    }
+
     @Override
     public void onSensorChanged(SensorEvent event) {
         if (event == null || event.sensor == null) return;
 
         int type = event.sensor.getType();
+
+        if (type == Sensor.TYPE_STEP_DETECTOR) {
+            if (usingHardwareStepDetector && haveHeading && event.values != null && event.values.length > 0 && event.values[0] > 0f) {
+                emitStep(SystemClock.elapsedRealtime());
+            }
+            return;
+        }
 
         if (type == Sensor.TYPE_MAGNETIC_FIELD) {
             float magnitude = vectorMagnitude(event.values);
@@ -99,6 +143,10 @@ public final class RelativeMotionTracker implements SensorEventListener {
 
         updateHeading();
 
+        // When Android's dedicated step detector is active, accelerometer motion is
+        // used only for heading/gravity. Waving the phone cannot itself move the fix.
+        if (usingHardwareStepDetector) return;
+
         float gravityMagnitude = vectorMagnitude(gravity);
         if (gravityMagnitude < 1f) return;
 
@@ -112,16 +160,30 @@ public final class RelativeMotionTracker implements SensorEventListener {
             (lz * gravity[2])
         ) / gravityMagnitude;
 
-        if (haveHeading && stepDetector.update(vertical, SystemClock.elapsedRealtime())) {
-            Listener currentListener = listener;
-            if (currentListener != null) {
-                currentListener.onStep(filteredHeading, SystemClock.elapsedRealtime());
-            }
+        long nowMs = SystemClock.elapsedRealtime();
+        if (
+            haveHeading
+            && fallbackStepDetector.update(vertical, nowMs)
+            && fallbackCadenceGate.accept(nowMs)
+        ) {
+            emitStep(nowMs);
         }
     }
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+
+    private void emitStep(long timestampMs) {
+        Listener currentListener = listener;
+        if (currentListener != null) {
+            currentListener.onStep(filteredHeading, timestampMs);
+        }
+    }
+
+    private boolean hasActivityRecognitionPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true;
+        return appContext.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED;
+    }
 
     private void updateHeading() {
         if (!haveGravity || !haveMagnetic) return;
@@ -138,8 +200,10 @@ public final class RelativeMotionTracker implements SensorEventListener {
         haveGravity = false;
         haveMagnetic = false;
         haveHeading = false;
+        usingHardwareStepDetector = false;
         filteredHeading = 0f;
-        stepDetector.reset();
+        fallbackStepDetector.reset();
+        fallbackCadenceGate.reset();
         headingFilter.reset();
     }
 
