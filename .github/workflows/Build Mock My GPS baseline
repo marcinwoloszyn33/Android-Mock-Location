@@ -1,0 +1,51 @@
+name: Build Mock My GPS baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout service branch
+        uses: actions/checkout@v4
+        with:
+          ref: service
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Make Gradle wrapper executable
+        working-directory: android-studio-project
+        run: chmod +x gradlew
+
+      - name: Build GMS + SAF debug APK
+        working-directory: android-studio-project
+        run: |
+          ./gradlew \
+            :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug \
+            --stacktrace
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-baseline-apk
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
