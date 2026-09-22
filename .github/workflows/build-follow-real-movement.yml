@@ -805,7 +805,7 @@ jobs:
 
           if '.ui.LeakCheckActivity' not in text:
               activity_marker = '        <!-- copied from https://github.com/osmandapp/Osmand/blob/2.0.0/OsmAnd/AndroidManifest.xml -->'
-              activity = '        <activity\\n            android:name=".ui.LeakCheckActivity"\\n            android:launchMode="standard"\\n            android:exported="false" />\\n\\n'
+              activity = '        <activity\n            android:name=".ui.LeakCheckActivity"\n            android:launchMode="standard"\n            android:exported="false" />\n\n'
               if activity_marker not in text:
                   raise SystemExit("Could not locate activity insertion marker in manifest")
               text = text.replace(activity_marker, activity + activity_marker, 1)
