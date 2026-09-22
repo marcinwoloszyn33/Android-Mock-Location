@@ -1,0 +1,280 @@
+name: Build Follow Real Movement V4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout V3 implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: follow-real-movement
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Create V4 implementation branch
+        run: |
+          git fetch origin follow-real-movement
+          git fetch origin follow-real-movement-v4:refs/remotes/origin/follow-real-movement-v4 || true
+          git checkout -B follow-real-movement-v4 origin/follow-real-movement
+          git status --short
+
+      - name: RED - add V4 behavior tests first
+        run: |
+          python3 - <<'PY'
+          import base64
+          import io
+          import zipfile
+          from pathlib import Path
+
+          payload = base64.b64decode("""
+          UEsDBBQAAAAIACVLNl3iXg6mQwEAAL8DAACBAAAAYW5kcm9pZC1zdHVkaW8tcHJvamVjdC9Nb2NrLW15LUdQUy9zcmMvdGVzdC9qYXZhL2NvbS9naXRodWIv
+          d2FycmVuX2JhbmsvbW9ja19sb2NhdGlvbi9zZXJ2aWNlL21vdGlvbi9Nb3Rpb25Db250cm9sUG9saWN5VGVzdC5qYXZhpVLBbsIwDL33K3os05Qf4LJpCMEk
+          JjRgHFGamDY0javYBVUT/76kQmyHSozNhyh5znt+dtJIVckCUoW1KAyXbS5O0ntwu1y6StSoqp1FJdmgEwT+aBQENB7HSWLqBj2n6AtxaJ1hsQbib5w48NSP
+          9DMFCRYP4UrT5jbklJVE6aIXfEHHHu0SQ6KLSulnkoZ4ivt+dyEd0ei0lF4Hq7BiaCbAoBj9nJYe9hD8620JbkMyt5CNLjoxZO9g7VvIBooKKrG1ekMwG1DP
+          ONAe07iORuNe8pzc7fANOejrbRg2trwEXxuiYGTA5lRa+rvPfWT/yugBOwoPVa1YdvRhyISpTVpvXDFFa/H0DtIu8Ag1OL5/mqsST6+XCtmVGqP3eQPpu7h1
+          KSJX4K6W5zQzWoObu6ntFqiHfsutZ/hfg79FBvo7J19QSwMEFAAAAAgAJUs2XUQduVMlAQAA7gMAAIEAAABhbmRyb2lkLXN0dWRpby1wcm9qZWN0L01vY2st
+          bXktR1BTL3NyYy90ZXN0L2phdmEvY29tL2dpdGh1Yi93YXJyZW5fYmFuay9tb2NrX2xvY2F0aW9uL3NlcnZpY2UvbW90aW9uL0ZhbGxiYWNrQ2FkZW5jZUdh
+          dGVUZXN0LmphdmHNUsFKAzEQve9X5Lj1EFpFL0WwFFoWVKQUPJbZ7BDTTTNrJts9SP/d7LK4KkX2pOYQJjPvvbxHUoEqQaNQdJDahJc6lw14j26XgyvlgVS5
+          s6QgGHKS0R+Nwthtj/MkMYeKfBDktdzXzgS5RQ5Dn0PkqU/jBUeJIC8ipKpzG2fKArNYgbV5dLKEAp3CNQRslcRbIuK6a+uu6klHMoUwTDbiiiW4whSxyjjT
+          jjwW6aQntuuMtNDtdiscNufG6WT+wYbOcAQxpi1LglJYhXQ2nU7vJz3wlPxgk1GRG0wuwjPY0jjdX5jxolP8fdcDcOvrb7ibsekC0Qo4PHQfIuMN7lH9aZYz
+          wNnYMJacXkO1wdfaeORHbHpPT2D8f4p0eT3uHa++Rj8l71BLAQIUAxQAAAAIACVLNl3iXg6mQwEAAL8DAACBAAAAAAAAAAAAAACkgQAAAABhbmRyb2lkLXN0
+          dWRpby1wcm9qZWN0L01vY2stbXktR1BTL3NyYy90ZXN0L2phdmEvY29tL2dpdGh1Yi93YXJyZW5fYmFuay9tb2NrX2xvY2F0aW9uL3NlcnZpY2UvbW90aW9u
+          L01vdGlvbkNvbnRyb2xQb2xpY3lUZXN0LmphdmFQSwECFAMUAAAACAAlSzZdRB25UyUBAADuAwAAgQAAAAAAAAAAAAAApIHiAQAAYW5kcm9pZC1zdHVkaW8t
+          cHJvamVjdC9Nb2NrLW15LUdQUy9zcmMvdGVzdC9qYXZhL2NvbS9naXRodWIvd2FycmVuX2JhbmsvbW9ja19sb2NhdGlvbi9zZXJ2aWNlL21vdGlvbi9GYWxs
+          YmFja0NhZGVuY2VHYXRlVGVzdC5qYXZhUEsFBgAAAAACAAIAXgEAAKYDAAAAAA==
+          """)
+          with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+              zf.extractall(Path("."))
+          PY
+
+      - name: RED - verify V4 tests fail before production code
+        run: |
+          cd android-studio-project
+          chmod +x gradlew
+          set +e
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace > ../red-v4.log 2>&1
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "RED phase unexpectedly passed."
+            cat ../red-v4.log
+            exit 1
+          fi
+
+          if ! grep -Eq "MotionControlPolicy|FallbackCadenceGate" ../red-v4.log; then
+            echo "RED failed, but not because the V4 feature classes are missing."
+            cat ../red-v4.log
+            exit 1
+          fi
+
+          echo "RED confirmed: V4 tests fail before implementation."
+
+      - name: GREEN - apply V4 production changes
+        run: |
+          python3 - <<'PY'
+          import base64
+          import io
+          import zipfile
+          from pathlib import Path
+
+          payload = base64.b64decode("""
+          UEsDBBQAAAAIAAVLNl1A5PuKKAEAAMUCAAB9AAAAYW5kcm9pZC1zdHVkaW8tcHJvamVjdC9Nb2NrLW15LUdQUy9zcmMvbWFpbi9qYXZhL2NvbS9naXRodWIv
+          d2FycmVuX2JhbmsvbW9ja19sb2NhdGlvbi9zZXJ2aWNlL21vdGlvbi9Nb3Rpb25Db250cm9sUG9saWN5LmphdmGVUM1OwzAMvvcpwmXaJNQX2AkBAiENpk6c
+          Jzf1ttA0Lo7bqpr27iTd4EA7CXxy7C/fj2vQJexRaarSvZFDk6cdMKPb5uDKtCJdbi1pEEMu9cit0Rim8blMkrrJrdFqZxxYpS14r1bD7p6cMNk1hXWvjokK
+          VbNpQXAKMV+o4yk5o86UXoKkVjmRRXDKH6ixxbvHZ+AiGMSNYP2AglqI58PHWD9wdJ74rgVjIbd4OwKAFtMa6TPUtHcmGlojV8b70D0xOMHijV9JMvxsDGMx
+          MCwuSWIxSsMjJTWb/Z97OZD+If/mQN0L9T5syonQAhyox2F3ZC11GYJdUYsVOnl00ewU1PYrKiYO9nGRvfozMLOFfpT06uHObuPBbi6qsf+lE0fXmL/Pdkq+
+          AFBLAwQUAAAACAAFSzZdhRMA0YUBAACnBAAAfQAAAGFuZHJvaWQtc3R1ZGlvLXByb2plY3QvTW9jay1teS1HUFMvc3JjL21haW4vamF2YS9jb20vZ2l0aHVi
+          L3dhcnJlbl9iYW5rL21vY2tfbG9jYXRpb24vc2VydmljZS9tb3Rpb24vRmFsbGJhY2tDYWRlbmNlR2F0ZS5qYXZhjVNdb4IwFH3nV/QRM0d0e2RbYpwuJuDD
+          5pa9kUup0lhaQov70v++IhgLQvC+0d5z7jn3lBTwFjYEYZE4G6riPHS+IMsID0LgWycReBswgUFRwR1Jsh3FRJ8Wn65lpXnIKEZryoEhzEBKNAfGQk06hYhw
+          TF5AEfRnIV1Vs1Sa7IRhgm/Q82w+efdWgb9YBovlavb6MfEC/w09ovvRyHOvBE8+G+Dx3RFdwjO6K5QYwITyBVfaETBfup1d8N3VdbzXntUUeEQjfeRLPdbT
+          x05hRQt5n53ml/JblmMPqvUUpWIq7Y51DLusDkpZh95Jl7aHLSabepwaQhv0QcWOhthjvd9hnbDScsaazCa2hfkGjQu6mpY2a/KH4zgTnP6SCIVCMAIcAcYk
+          VaVFRROiH0qS1s3QNbIv4mrmZQKKuszXYHdrrRlRecbRGpgk55tK+5GrEEfNdRhc6LY568zRI6Lm0OB/qGeD9ntz+lN37Fe5qRpUlpPelHaCRhogiao99/6f
+          p+Q9WP9QSwMEFAAAAAgABUs2Xbkjk1RKCAAAsh4AAH8AAABhbmRyb2lkLXN0dWRpby1wcm9qZWN0L01vY2stbXktR1BTL3NyYy9tYWluL2phdmEvY29tL2dp
+          dGh1Yi93YXJyZW5fYmFuay9tb2NrX2xvY2F0aW9uL3NlcnZpY2UvbW90aW9uL1JlbGF0aXZlTW90aW9uVHJhY2tlci5qYXZhrRldc9s28t2/AnlpqUShJbvp
+          3J3j3ukkxtHUsnySkl4m49HAJChhTJEsCCpWGv/3LkiQBEBIcqblg2ViP7G72F0sU+w/4BVBfrJxV5Sv83v3C2aMxMt7HD+4m8R/WEaJjzlNYjcjbEt9Aqvi
+          9eLkhG7ShHGE44AlNHAnOKYhyfiFCfCTmJOYu0Px+7gfnm7c21IhYAV/WQtzjVkAChJ3TuIsOQr3tsD2WUjXNAMVjkvcp1iSuf/NaRTYAPMd8N4MwY4PYLQ0
+          v4+oj0Ia4wj5Ec4yNCMRWHhLJoVhFwxsQBgCRhHZgG4ZsiiK/jhB8EhuFAzIQuwTZMDFswU9UBLPOUmdMEowR/cEMxqvRmTFCMm6KEriFeJ0A87Dm3SSdS4K
+          4qeTUgajW8wJAiCvNS8ZXc0GH8eLT8vB9e37AbpEPfcfvfDiGNVkfLOcDK5uvMV4uHw39q5Hyw8LoO6/eQbt4P922p4QrFGXZDLoEE7TOv7aWJp3Uab7eh86
+          wr5PIsKSDeEH8TZ4FRN+FK2KNeGpEeD6PLGi1z6O6qgtsE5P0YhE9J4wwI12YD5GfRCJ+BrH6OM5+rImMbyQWhKgkBQFUhaiGcpjvMU0wvcRcW2aKqqhEEfR
+          PQSrtniJYvJFw3P67s9vwi4Ex0/i57zXu+7YtvVOshvigMQ+uSoglrVSggXbsbJ9T3AAwf6ORsIUa+2tZKVhOD337E3YscZSEYKf79CK4S3lO0lerp7f2YRX
+          FGUEQCw/n4QlvMi7Gsk/D5IkjEKKaFMJQRrZfZJEBGJijbfkqtzMxV6EidR9P4Y0oB2B5XG8F5hnAHp/PO6Lsx8WDiJBLU5NgdYk6lSn3y9/u+2z01EyZZMj
+          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
+          a2mWIxo1fqKEY6ZEbD3n+E2zg5uBZ5uuI8DmkkI7+7PPl8qm+2ibgq4HMXZXep2FXqHvvnQoqlb+/JjWeYf8QUCzn3cBvviqtOO7aW172XbclQ67LPWz/39c
+          kLpAHXn0+GXoAB0YOfXoNaiLNzOlDr3zPO5a7jzr9i93t+hg151z/aH3nFsmNUJX8jYySWP8aTpfzG5v8OLyQzi7WaI3SHsfTm4vpwv806jrlDWM6l5qQdPV
+          Yb2g/ZEkLrp32PWzumofov+OEX+czq9ni2rhd/OLm+X00r5Y8zbsjTYOrJR6tam67MqG//kv+hUN5RM96Um/76eCaj/oM9rh4EI5vVfFrH7kiDOypZUD9qTz
+          6jylJr+a3rxbvg8X72/nyxGWaxxy9tPJ71BLAQIUAxQAAAAIAAVLNl1A5PuKKAEAAMUCAAB9AAAAAAAAAAAAAACkgQAAAABhbmRyb2lkLXN0dWRpby1wcm9q
+          ZWN0L01vY2stbXktR1BTL3NyYy9tYWluL2phdmEvY29tL2dpdGh1Yi93YXJyZW5fYmFuay9tb2NrX2xvY2F0aW9uL3NlcnZpY2UvbW90aW9uL01vdGlvbkNv
+          bnRyb2xQb2xpY3kuamF2YVBLAQIUAxQAAAAIAAVLNl2FEwDRhQEAAKcEAAB9AAAAAAAAAAAAAACkgcMBAABhbmRyb2lkLXN0dWRpby1wcm9qZWN0L01vY2st
+          bXktR1BTL3NyYy9tYWluL2phdmEvY29tL2dpdGh1Yi93YXJyZW5fYmFuay9tb2NrX2xvY2F0aW9uL3NlcnZpY2UvbW90aW9uL0ZhbGxiYWNrQ2FkZW5jZUdh
+          dGUuamF2YVBLAQIUAxQAAAAIAAVLNl25I5NUSggAALIeAAB/AAAAAAAAAAAAAACkgeMDAABhbmRyb2lkLXN0dWRpby1wcm9qZWN0L01vY2stbXktR1BTL3Ny
+          Yy9tYWluL2phdmEvY29tL2dpdGh1Yi93YXJyZW5fYmFuay9tb2NrX2xvY2F0aW9uL3NlcnZpY2UvbW90aW9uL1JlbGF0aXZlTW90aW9uVHJhY2tlci5qYXZh
+          UEsBAhQDFAAAAAgAFUs2XTtdJ8gYDgAAu00AAH8AAAAAAAAAAAAAAKSBygwAAGFuZHJvaWQtc3R1ZGlvLXByb2plY3QvTW9jay1teS1HUFMvc3JjL21haW4v
+          amF2YS9jb20vZ2l0aHViL3dhcnJlbl9iYW5rL21vY2tfbG9jYXRpb24vc2VydmljZS9sb29wZXIvTG9jYXRpb25UaHJlYWRNYW5hZ2VyLmphdmFQSwECFAMU
+          AAAACAAcSzZd7X9qEUEIAABCLAAAcQAAAAAAAAAAAAAApIF/GwAAYW5kcm9pZC1zdHVkaW8tcHJvamVjdC9Nb2NrLW15LUdQUy9zcmMvbWFpbi9qYXZhL2Nv
+          bS9naXRodWIvd2FycmVuX2JhbmsvbW9ja19sb2NhdGlvbi91aS9QcmVmZXJlbmNlc0FjdGl2aXR5LmphdmFQSwUGAAAAAAUABQBPAwAATyQAAAAA
+          """)
+          with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+              zf.extractall(Path("."))
+
+          manifest = Path("android-studio-project/Mock-my-GPS/src/main/AndroidManifest.xml")
+          text = manifest.read_text(encoding="utf-8")
+
+          permission = '    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />\n'
+          if "android.permission.ACTIVITY_RECOGNITION" not in text:
+              marker = '    <uses-permission android:name="android.permission.WAKE_LOCK" />\n'
+              if marker not in text:
+                  raise SystemExit("Could not locate WAKE_LOCK permission marker in AndroidManifest.xml")
+              text = text.replace(marker, marker + "\n" + permission, 1)
+
+          manifest.write_text(text, encoding="utf-8")
+          PY
+
+      - name: GREEN - run full unit test task
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace | tee ../green-v4-tests.log
+
+      - name: Build GMS and AOSP V4 debug APKs
+        run: |
+          cd android-studio-project
+          ./gradlew \
+            :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug \
+            :Mock-my-GPS:assembleEnglishWithAospLocationProvidersWithBackupRestoreSAFDebug \
+            --stacktrace | tee ../build-v4.log
+
+      - name: Verify V4 source integration
+        run: |
+          grep -q "Sensor.TYPE_STEP_DETECTOR" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/motion/RelativeMotionTracker.java
+          grep -q "MotionControlPolicy.shouldShowJoystick" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java
+          grep -q "ACTIVITY_RECOGNITION" android-studio-project/Mock-my-GPS/src/main/AndroidManifest.xml
+          grep -q "persistSessionMaybe(SystemClock.elapsedRealtime(), true)" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java
+          echo "V4 integration checks passed."
+
+      - name: Commit V4 implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-studio-project/Mock-my-GPS/src/main
+          git add android-studio-project/Mock-my-GPS/src/test
+          git commit -m "feat: improve real movement detection and keep joystick"
+
+      - name: Upload V4 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-follow-real-movement-v4-apks
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Push V4 implementation branch
+        run: |
+          git push --force-with-lease origin follow-real-movement-v4
+
+      - name: Upload V4 verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-real-movement-v4-verification
+          path: |
+            red-v4.log
+            green-v4-tests.log
+            build-v4.log
+          if-no-files-found: warn
