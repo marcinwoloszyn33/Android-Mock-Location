@@ -5,6 +5,7 @@ import com.github.warren_bank.mock_location.data_model.BookmarkItem;
 import com.github.warren_bank.mock_location.data_model.LocPoint;
 import com.github.warren_bank.mock_location.data_model.SharedPrefs;
 import com.github.warren_bank.mock_location.service.LocationService;
+import com.github.warren_bank.mock_location.ui.logic.TripEditState;
 import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsListener;
 import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsRequester;
 
@@ -57,16 +58,12 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
                 try {
                     String trip_origin = s.toString();
                     LocPoint modifiedLocOrigin = new LocPoint(trip_origin);
-                    short mask = (1 << 0);  // 0x0001
-
-                    if (originalLocOrigin.equals(modifiedLocOrigin)) {
-                        // flip bit[0] to 0
-                        diff_fields &= ~mask;
-                    }
-                    else {
-                        // flip bit[0] to 1
-                        diff_fields |= mask;
-                    }
+                    short mask = TripEditState.ORIGIN_MASK;
+                    diff_fields = TripEditState.update(
+                        diff_fields,
+                        mask,
+                        !originalLocOrigin.equals(modifiedLocOrigin)
+                    );
                     checkDiff();
                 }
                 catch(Exception e) {}
@@ -84,16 +81,12 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
                 try {
                     String trip_destination = s.toString();
                     LocPoint modifiedLocDestination = new LocPoint(trip_destination);
-                    short mask = (1 << 1);  // 0x0002
-
-                    if (originalLocDestination.equals(modifiedLocDestination)) {
-                        // flip bit[1] to 0
-                        diff_fields &= ~mask;
-                    }
-                    else {
-                        // flip bit[1] to 1
-                        diff_fields |= mask;
-                    }
+                    short mask = TripEditState.DESTINATION_MASK;
+                    diff_fields = TripEditState.update(
+                        diff_fields,
+                        mask,
+                        !originalLocDestination.equals(modifiedLocDestination)
+                    );
                     checkDiff();
                 }
                 catch(Exception e) {}
@@ -109,16 +102,12 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
                 try {
                     String trip_duration = s.toString();
                     int modifiedTripDuration = Integer.parseInt(trip_duration, 10);
-                    short mask = (1 << 2);  // 0x0004
-
-                    if (originalTripDuration != modifiedTripDuration) {
-                        // flip bit[2] to 0
-                        diff_fields &= ~mask;
-                    }
-                    else {
-                        // flip bit[2] to 1
-                        diff_fields |= mask;
-                    }
+                    short mask = TripEditState.DURATION_MASK;
+                    diff_fields = TripEditState.update(
+                        diff_fields,
+                        mask,
+                        originalTripDuration != modifiedTripDuration
+                    );
                     checkDiff();
                 }
                 catch(Exception e) {}
@@ -163,30 +152,49 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
     @Override
     protected void onResume() {
         super.onResume();
-        reset();
+
+        LocPoint savedOrigin = SharedPrefs.getTripOrigin(TripSimulationActivity.this);
+        LocPoint savedDestination = SharedPrefs.getTripDestination(TripSimulationActivity.this);
+        int savedDuration = SharedPrefs.getTripDuration(TripSimulationActivity.this);
+
+        if (!LocationService.isStarted()) {
+            originalLocOrigin = savedOrigin;
+            originalLocDestination = savedDestination;
+            originalTripDuration = savedDuration;
+            diff_fields = 0;
+        }
+
+        reset(savedOrigin, savedDestination, savedDuration);
     }
 
-    private void reset() {
-        input_trip_origin.setText(originalLocOrigin.toString());
-        input_trip_destination.setText(originalLocDestination.toString());
-        input_trip_duration.setText(Integer.toString(originalTripDuration, 10));
+    private void reset(LocPoint displayedOrigin, LocPoint displayedDestination, int displayedDuration) {
+        label_trip_origin.setVisibility(View.GONE);
+        label_trip_destination.setVisibility(View.GONE);
+
+        input_trip_origin.setText(displayedOrigin.toString());
+        input_trip_destination.setText(displayedDestination.toString());
+        input_trip_duration.setText(Integer.toString(displayedDuration, 10));
 
         BookmarkItem bmItem;
-        bmItem = SharedPrefs.getBookmarkItem(TripSimulationActivity.this, originalLocOrigin);
+        bmItem = SharedPrefs.getBookmarkItem(TripSimulationActivity.this, displayedOrigin);
         if (bmItem != null) {
             label_trip_origin.setText(bmItem.title);
             label_trip_origin.setVisibility(View.VISIBLE);
         }
-        bmItem = SharedPrefs.getBookmarkItem(TripSimulationActivity.this, originalLocDestination);
+        bmItem = SharedPrefs.getBookmarkItem(TripSimulationActivity.this, displayedDestination);
         if (bmItem != null) {
             label_trip_destination.setText(bmItem.title);
             label_trip_destination.setVisibility(View.VISIBLE);
         }
 
-        if (LocationService.isStarted())
+        if (LocationService.isStarted()) {
             button_toggle_state.setText(R.string.label_button_stop);
-
-        button_update.setVisibility(View.GONE);
+            checkDiff();
+        }
+        else {
+            button_toggle_state.setText(R.string.label_button_start);
+            button_update.setVisibility(View.GONE);
+        }
     }
 
     private void checkDiff() {
@@ -223,22 +231,9 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
 
         LocationService.doStart(TripSimulationActivity.this, true, modifiedLocOrigin, modifiedLocDestination, modifiedTripDuration);
 
-        short mask;
-
-        mask = (1 << 0);
-        if ((diff_fields & mask) == mask) {
-            SharedPrefs.putTripOrigin(TripSimulationActivity.this, modifiedLocOrigin);
-        }
-
-        mask = (1 << 1);
-        if ((diff_fields & mask) == mask) {
-            SharedPrefs.putTripDestination(TripSimulationActivity.this, modifiedLocDestination);
-        }
-
-        mask = (1 << 2);
-        if ((diff_fields & mask) == mask) {
-            SharedPrefs.putTripDuration(TripSimulationActivity.this, modifiedTripDuration);
-        }
+        SharedPrefs.putTripOrigin(TripSimulationActivity.this, modifiedLocOrigin);
+        SharedPrefs.putTripDestination(TripSimulationActivity.this, modifiedLocDestination);
+        SharedPrefs.putTripDuration(TripSimulationActivity.this, modifiedTripDuration);
 
         originalLocOrigin      = modifiedLocOrigin;
         originalLocDestination = modifiedLocDestination;

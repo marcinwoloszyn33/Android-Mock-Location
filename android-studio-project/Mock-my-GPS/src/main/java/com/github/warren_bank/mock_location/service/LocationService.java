@@ -6,6 +6,7 @@ import com.github.warren_bank.mock_location.data_model.LocPoint;
 import com.github.warren_bank.mock_location.service.looper.LocationThreadManager;
 import com.github.warren_bank.mock_location.service.recovery.MockSessionState;
 import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;
+import com.github.warren_bank.mock_location.service.recovery.TripProgress;
 import com.github.warren_bank.mock_location.ui.MainActivity;
 
 import android.app.Notification;
@@ -268,6 +269,17 @@ public class LocationService extends Service {
 
         running = true;
         LTM.start(new LocPoint(snapshot.latitude, snapshot.longitude));
+
+        if (snapshot.hasResumableTrip()) {
+            int remainingSeconds = TripProgress.secondsForRestore(snapshot.tripRemainingMs);
+            if (remainingSeconds > 0) {
+                LTM.flyToLocation(
+                    new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude),
+                    remainingSeconds
+                );
+            }
+        }
+
         refreshWakeLock();
     }
 

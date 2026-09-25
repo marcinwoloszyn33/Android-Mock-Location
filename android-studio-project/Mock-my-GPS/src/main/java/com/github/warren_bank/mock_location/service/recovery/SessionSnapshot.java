@@ -16,6 +16,9 @@ public final class SessionSnapshot {
     public final double stepLengthMeters;
     public final boolean aggressiveKeepAlive;
     public final String mode;
+    public final double tripTargetLatitude;
+    public final double tripTargetLongitude;
+    public final long tripRemainingMs;
 
     public SessionSnapshot(
         boolean active,
@@ -37,29 +40,67 @@ public final class SessionSnapshot {
     }
 
     public SessionSnapshot(
-        boolean active,
-        double latitude,
-        double longitude,
-        boolean followRealMovement,
-        double stepLengthMeters,
-        boolean aggressiveKeepAlive,
-        String mode
-    ) {
-        boolean validCoordinates = isFinite(latitude)
-            && isFinite(longitude)
-            && latitude >= -90d
-            && latitude <= 90d
-            && longitude >= -180d
-            && longitude <= 180d;
+boolean active,
+double latitude,
+double longitude,
+boolean followRealMovement,
+double stepLengthMeters,
+boolean aggressiveKeepAlive,
+String mode
+) {
+this(
+  active,
+  latitude,
+  longitude,
+  followRealMovement,
+  stepLengthMeters,
+  aggressiveKeepAlive,
+  mode,
+  0d,
+  0d,
+  0L
+);
+}
 
-        this.active = active && validCoordinates;
-        this.latitude = validCoordinates ? latitude : 0d;
-        this.longitude = validCoordinates ? longitude : 0d;
-        this.followRealMovement = this.active && followRealMovement;
-        this.stepLengthMeters = sanitizeStepLength(stepLengthMeters);
-        this.aggressiveKeepAlive = this.active && aggressiveKeepAlive;
-        this.mode = sanitizeMode(this.active, this.followRealMovement, mode);
-    }
+public SessionSnapshot(
+boolean active,
+double latitude,
+double longitude,
+boolean followRealMovement,
+double stepLengthMeters,
+boolean aggressiveKeepAlive,
+String mode,
+double tripTargetLatitude,
+double tripTargetLongitude,
+long tripRemainingMs
+) {
+boolean validCoordinates = isValidCoordinates(latitude, longitude);
+
+this.active = active && validCoordinates;
+this.latitude = validCoordinates ? latitude : 0d;
+this.longitude = validCoordinates ? longitude : 0d;
+this.followRealMovement = this.active && followRealMovement;
+this.stepLengthMeters = sanitizeStepLength(stepLengthMeters);
+this.aggressiveKeepAlive = this.active && aggressiveKeepAlive;
+this.mode = sanitizeMode(this.active, this.followRealMovement, mode);
+
+boolean validTripRoute =
+     this.active
+  && MODE_TRIP.equals(this.mode)
+  && isValidCoordinates(tripTargetLatitude, tripTargetLongitude)
+  && tripRemainingMs > 0L;
+
+this.tripTargetLatitude = validTripRoute ? tripTargetLatitude : 0d;
+this.tripTargetLongitude = validTripRoute ? tripTargetLongitude : 0d;
+this.tripRemainingMs = validTripRoute ? tripRemainingMs : 0L;
+}
+
+public boolean hasResumableTrip() {
+return active
+  && MODE_TRIP.equals(mode)
+  && tripRemainingMs > 0L
+  && isValidCoordinates(tripTargetLatitude, tripTargetLongitude);
+}
 
     public static SessionSnapshot inactive() {
         return new SessionSnapshot(
@@ -91,7 +132,10 @@ public final class SessionSnapshot {
                 raw.followRealMovement,
                 raw.stepLengthMeters,
                 raw.aggressiveKeepAlive,
-                raw.mode
+                raw.mode,
+                raw.tripTargetLatitude,
+                raw.tripTargetLongitude,
+                raw.tripRemainingMs
             );
         }
         catch (Exception e) {
@@ -107,6 +151,9 @@ public final class SessionSnapshot {
         double stepLengthMeters;
         boolean aggressiveKeepAlive;
         String mode;
+        double tripTargetLatitude;
+        double tripTargetLongitude;
+        long tripRemainingMs;
     }
 
     private static String sanitizeMode(boolean active, boolean followRealMovement, String mode) {
@@ -119,6 +166,15 @@ public final class SessionSnapshot {
     private static double sanitizeStepLength(double value) {
         if (!isFinite(value) || value <= 0d) return DEFAULT_STEP_LENGTH_METERS;
         return Math.max(0.20d, Math.min(2.00d, value));
+    }
+
+    private static boolean isValidCoordinates(double latitude, double longitude) {
+        return isFinite(latitude)
+            && isFinite(longitude)
+            && latitude >= -90d
+            && latitude <= 90d
+            && longitude >= -180d
+            && longitude <= 180d;
     }
 
     private static boolean isFinite(double value) {

@@ -5,6 +5,9 @@ import com.github.warren_bank.mock_location.R;
 import com.github.warren_bank.mock_location.data_model.BookmarkItem;
 import com.github.warren_bank.mock_location.data_model.LocPoint;
 import com.github.warren_bank.mock_location.data_model.SharedPrefs;
+import com.github.warren_bank.mock_location.service.LocationService;
+import com.github.warren_bank.mock_location.service.looper.LocationThreadManager;
+import com.github.warren_bank.mock_location.ui.logic.BookmarkSelectionPolicy;
 import com.github.warren_bank.mock_location.util.BackupRestoreMgr;
 
 import android.app.Activity;
@@ -200,6 +203,14 @@ public class BookmarksActivity extends Activity {
 
     private void handleFixedPosition(LocPoint point) {
         SharedPrefs.putTripOrigin(BookmarksActivity.this, point);
+
+        if (BookmarkSelectionPolicy.shouldApplyFixedImmediately(LocationService.isStarted())) {
+            LocationThreadManager manager = LocationService.getLocationThreadManager();
+            if (manager != null) {
+                manager.jumpToLocation(point);
+            }
+        }
+
         startMainActivity(0, null);
     }
 

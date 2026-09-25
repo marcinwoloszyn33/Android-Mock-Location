@@ -95,6 +95,7 @@ public class FixedPositionActivity extends Activity implements RuntimePermission
     @Override
     protected void onResume() {
         super.onResume();
+        originalLoc = SharedPrefs.getTripOrigin(FixedPositionActivity.this);
         reset();
     }
 

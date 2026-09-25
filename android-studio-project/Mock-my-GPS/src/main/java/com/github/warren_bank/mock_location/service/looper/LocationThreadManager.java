@@ -13,6 +13,7 @@ import com.github.warren_bank.mock_location.service.motion.RelativeMotionTracker
 import com.github.warren_bank.mock_location.service.recovery.MockSessionState;
 import com.github.warren_bank.mock_location.service.recovery.MockWatchdog;
 import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;
+import com.github.warren_bank.mock_location.service.recovery.TripProgress;
 import com.github.warren_bank.mock_location.ui.components.JoyStickView;
 
 import android.content.Context;
@@ -246,7 +247,11 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         if (location == null) return;
         synchronized (mLock) {
             jumpToLocationLocked(location);
+            if (mIsStarted && !mFollowRealMovementEnabled) {
+                mFixedCountRemaining = mFixedCount;
+            }
         }
+        updateMotionAndJoystickState();
         persistSessionMaybe(SystemClock.elapsedRealtime(), true);
     }
 
@@ -276,6 +281,9 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
             mFlyTime = convertFlyTime_secondsToLoopIterations(trip_duration_seconds, mTimeInterval);
             mCurrentSpeedMps = 0f;
         }
+
+        updateMotionAndJoystickState();
+        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
     }
 
     public boolean isFlyMode() {
@@ -461,7 +469,9 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         boolean newAggressiveKeepAlive = EnhancedPrefs.getAggressiveKeepAlive(mContext);
 
         synchronized (mLock) {
-            mFollowRealMovementEnabled = newFollowEnabled;
+            // A simulated trip owns movement until it reaches its target.
+            // Merely reloading preferences must not silently cancel the trip.
+            mFollowRealMovementEnabled = mIsFlyMode ? false : newFollowEnabled;
             mStepLengthMeters = newStepLength;
             mWatchdogEnabled = newWatchdogEnabled;
             mWatchdogTimeoutSeconds = newWatchdogTimeoutSeconds;
@@ -472,9 +482,6 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
                 WATCHDOG_RETRY_INTERVAL_MS
             );
 
-            if (mFollowRealMovementEnabled && mIsFlyMode) {
-                mIsFlyMode = false;
-            }
         }
 
         updateMotionAndJoystickState();
@@ -538,6 +545,20 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
                     ? SessionSnapshot.MODE_FOLLOW_REAL_MOVEMENT
                     : SessionSnapshot.MODE_FIXED);
 
+            double tripTargetLatitude = 0d;
+            double tripTargetLongitude = 0d;
+            long tripRemainingMs = 0L;
+
+            if (mIsFlyMode && mTargetLocPoint != null) {
+                tripTargetLatitude = mTargetLocPoint.getLatitude();
+                tripTargetLongitude = mTargetLocPoint.getLongitude();
+                tripRemainingMs = TripProgress.remainingMillis(
+                    mFlyTime,
+                    mFlyTimeIndex,
+                    mTimeInterval
+                );
+            }
+
             snapshot = new SessionSnapshot(
                 true,
                 mCurrentLocPoint.getLatitude(),
@@ -545,7 +566,10 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
                 mFollowRealMovementEnabled,
                 mStepLengthMeters,
                 mAggressiveKeepAlive,
-                mode
+                mode,
+                tripTargetLatitude,
+                tripTargetLongitude,
+                tripRemainingMs
             );
         }
 
