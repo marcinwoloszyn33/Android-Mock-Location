@@ -1,0 +1,531 @@
+name: Build Follow Real Movement V5
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout V4 implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: follow-real-movement-v4
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Create V5 implementation branch
+        run: |
+          git fetch origin follow-real-movement-v4
+          git fetch origin follow-real-movement-v5:refs/remotes/origin/follow-real-movement-v5 || true
+          git checkout -B follow-real-movement-v5 origin/follow-real-movement-v4
+          git status --short
+
+      - name: RED - add V5 regression tests first
+        run: |
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/ui/logic
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/ui/logic/TripEditStateTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.ui.logic;
+
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class TripEditStateTest {
+              @Test
+              public void changedFieldSetsItsBit() {
+                  short diff = TripEditState.update((short) 0, TripEditState.DURATION_MASK, true);
+                  assertEquals(TripEditState.DURATION_MASK, diff);
+              }
+
+              @Test
+              public void unchangedFieldClearsItsBit() {
+                  short diff = TripEditState.update(TripEditState.DURATION_MASK, TripEditState.DURATION_MASK, false);
+                  assertEquals(0, diff);
+              }
+
+              @Test
+              public void updatingOneFieldPreservesOtherBits() {
+                  short diff = TripEditState.update(TripEditState.ORIGIN_MASK, TripEditState.DESTINATION_MASK, true);
+                  assertEquals((short) (TripEditState.ORIGIN_MASK | TripEditState.DESTINATION_MASK), diff);
+              }
+          }
+          EOF
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/ui/logic/BookmarkSelectionPolicyTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.ui.logic;
+
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class BookmarkSelectionPolicyTest {
+              @Test
+              public void activeFixedSessionUpdatesImmediately() {
+                  assertTrue(BookmarkSelectionPolicy.shouldApplyFixedImmediately(true));
+              }
+
+              @Test
+              public void stoppedSessionOnlyStoresBookmarkSelection() {
+                  assertFalse(BookmarkSelectionPolicy.shouldApplyFixedImmediately(false));
+              }
+          }
+          EOF
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/TripProgressTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.recovery;
+
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class TripProgressTest {
+              @Test
+              public void remainingMillisUsesUnfinishedIterations() {
+                  assertEquals(75000L, TripProgress.remainingMillis(200, 50, 500));
+              }
+
+              @Test
+              public void restoreSecondsRoundsUpSoTripDoesNotEndEarly() {
+                  assertEquals(76, TripProgress.secondsForRestore(75001L));
+                  assertEquals(1, TripProgress.secondsForRestore(1L));
+              }
+
+              @Test
+              public void completedTripHasNoRemainingTime() {
+                  assertEquals(0L, TripProgress.remainingMillis(50, 50, 500));
+                  assertEquals(0, TripProgress.secondsForRestore(0L));
+              }
+          }
+          EOF
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotV5Test.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.recovery;
+
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class SessionSnapshotV5Test {
+              @Test
+              public void resumableTripRoundTripKeepsTargetAndRemainingTime() {
+                  SessionSnapshot original = new SessionSnapshot(
+                      true,
+                      52.2297d,
+                      21.0122d,
+                      false,
+                      0.74d,
+                      true,
+                      SessionSnapshot.MODE_TRIP,
+                      52.2400d,
+                      21.0300d,
+                      65432L
+                  );
+
+                  SessionSnapshot restored = SessionSnapshot.fromJson(original.toJson());
+
+                  assertTrue(restored.active);
+                  assertEquals(SessionSnapshot.MODE_TRIP, restored.mode);
+                  assertTrue(restored.hasResumableTrip());
+                  assertEquals(52.2400d, restored.tripTargetLatitude, 0d);
+                  assertEquals(21.0300d, restored.tripTargetLongitude, 0d);
+                  assertEquals(65432L, restored.tripRemainingMs);
+              }
+
+              @Test
+              public void oldTripSnapshotWithoutRouteIsNotResumable() {
+                  SessionSnapshot oldStyle = new SessionSnapshot(
+                      true, 52d, 21d, false, 0.74d, false, SessionSnapshot.MODE_TRIP
+                  );
+                  assertFalse(oldStyle.hasResumableTrip());
+              }
+          }
+          EOF
+
+      - name: RED - verify V5 tests fail before production code
+        run: |
+          cd android-studio-project
+          chmod +x gradlew
+          set +e
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace > ../red-v5.log 2>&1
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "RED phase unexpectedly passed."
+            cat ../red-v5.log
+            exit 1
+          fi
+
+          if ! grep -Eq "TripEditState|BookmarkSelectionPolicy|TripProgress|SessionSnapshotV5Test|constructor SessionSnapshot" ../red-v5.log; then
+            echo "RED failed, but not because V5 behavior is missing."
+            cat ../red-v5.log
+            exit 1
+          fi
+
+          echo "RED confirmed: V5 regression tests fail before implementation."
+
+      - name: GREEN - apply V5 production changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location")
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"Could not locate {label} in {path}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # ------------------------------------------------------------------
+          # Pure V5 helpers (covered by RED tests)
+          # ------------------------------------------------------------------
+          logic_dir = root / "ui/logic"
+          logic_dir.mkdir(parents=True, exist_ok=True)
+
+          (logic_dir / "TripEditState.java").write_text(r'''package com.github.warren_bank.mock_location.ui.logic;
+
+          public final class TripEditState {
+          public static final short ORIGIN_MASK = (1 << 0);
+          public static final short DESTINATION_MASK = (1 << 1);
+          public static final short DURATION_MASK = (1 << 2);
+
+          private TripEditState() {}
+
+          public static short update(short diffFields, short mask, boolean changed) {
+          return changed
+            ? (short) (diffFields | mask)
+            : (short) (diffFields & ~mask);
+          }
+          }
+          ''', encoding="utf-8")
+
+          (logic_dir / "BookmarkSelectionPolicy.java").write_text(r'''package com.github.warren_bank.mock_location.ui.logic;
+
+          public final class BookmarkSelectionPolicy {
+          private BookmarkSelectionPolicy() {}
+
+          public static boolean shouldApplyFixedImmediately(boolean serviceStarted) {
+          return serviceStarted;
+          }
+          }
+          ''', encoding="utf-8")
+
+          recovery_dir = root / "service/recovery"
+          (recovery_dir / "TripProgress.java").write_text(r'''package com.github.warren_bank.mock_location.service.recovery;
+
+          public final class TripProgress {
+          private TripProgress() {}
+
+          public static long remainingMillis(int totalIterations, int completedIterations, int intervalMs) {
+          int safeIntervalMs = (intervalMs > 0) ? intervalMs : 100;
+          long remainingIterations = Math.max(0L, (long) totalIterations - (long) completedIterations);
+          return remainingIterations * (long) safeIntervalMs;
+          }
+
+          public static int secondsForRestore(long remainingMs) {
+          if (remainingMs <= 0L) return 0;
+          long seconds = (remainingMs + 999L) / 1000L;
+          return (seconds > Integer.MAX_VALUE) ? Integer.MAX_VALUE : (int) seconds;
+          }
+          }
+          ''', encoding="utf-8")
+
+          # ------------------------------------------------------------------
+          # Session snapshot now persists enough TRIP state to resume it.
+          # ------------------------------------------------------------------
+          snapshot = recovery_dir / "SessionSnapshot.java"
+          text = snapshot.read_text(encoding="utf-8")
+
+          text = text.replace(
+              '    public final String mode;\n',
+              '    public final String mode;\n'
+              '    public final double tripTargetLatitude;\n'
+              '    public final double tripTargetLongitude;\n'
+              '    public final long tripRemainingMs;\n',
+              1
+          )
+
+          start = text.index('    public SessionSnapshot(\n        boolean active,\n        double latitude,\n        double longitude,\n        boolean followRealMovement,\n        double stepLengthMeters,\n        boolean aggressiveKeepAlive,\n        String mode\n    ) {')
+          end = text.index('    public static SessionSnapshot inactive()', start)
+          constructor_block = r'''    public SessionSnapshot(
+          boolean active,
+          double latitude,
+          double longitude,
+          boolean followRealMovement,
+          double stepLengthMeters,
+          boolean aggressiveKeepAlive,
+          String mode
+          ) {
+          this(
+            active,
+            latitude,
+            longitude,
+            followRealMovement,
+            stepLengthMeters,
+            aggressiveKeepAlive,
+            mode,
+            0d,
+            0d,
+            0L
+          );
+          }
+
+          public SessionSnapshot(
+          boolean active,
+          double latitude,
+          double longitude,
+          boolean followRealMovement,
+          double stepLengthMeters,
+          boolean aggressiveKeepAlive,
+          String mode,
+          double tripTargetLatitude,
+          double tripTargetLongitude,
+          long tripRemainingMs
+          ) {
+          boolean validCoordinates = isValidCoordinates(latitude, longitude);
+
+          this.active = active && validCoordinates;
+          this.latitude = validCoordinates ? latitude : 0d;
+          this.longitude = validCoordinates ? longitude : 0d;
+          this.followRealMovement = this.active && followRealMovement;
+          this.stepLengthMeters = sanitizeStepLength(stepLengthMeters);
+          this.aggressiveKeepAlive = this.active && aggressiveKeepAlive;
+          this.mode = sanitizeMode(this.active, this.followRealMovement, mode);
+
+          boolean validTripRoute =
+               this.active
+            && MODE_TRIP.equals(this.mode)
+            && isValidCoordinates(tripTargetLatitude, tripTargetLongitude)
+            && tripRemainingMs > 0L;
+
+          this.tripTargetLatitude = validTripRoute ? tripTargetLatitude : 0d;
+          this.tripTargetLongitude = validTripRoute ? tripTargetLongitude : 0d;
+          this.tripRemainingMs = validTripRoute ? tripRemainingMs : 0L;
+          }
+
+          public boolean hasResumableTrip() {
+          return active
+            && MODE_TRIP.equals(mode)
+            && tripRemainingMs > 0L
+            && isValidCoordinates(tripTargetLatitude, tripTargetLongitude);
+          }
+
+          '''
+          text = text[:start] + constructor_block + text[end:]
+
+          old_from_json = '''            return new SessionSnapshot(\n                raw.active,\n                raw.latitude,\n                raw.longitude,\n                raw.followRealMovement,\n                raw.stepLengthMeters,\n                raw.aggressiveKeepAlive,\n                raw.mode\n            );'''
+          new_from_json = '''            return new SessionSnapshot(\n                raw.active,\n                raw.latitude,\n                raw.longitude,\n                raw.followRealMovement,\n                raw.stepLengthMeters,\n                raw.aggressiveKeepAlive,\n                raw.mode,\n                raw.tripTargetLatitude,\n                raw.tripTargetLongitude,\n                raw.tripRemainingMs\n            );'''
+          if old_from_json not in text:
+              raise SystemExit("Could not locate SessionSnapshot.fromJson constructor")
+          text = text.replace(old_from_json, new_from_json, 1)
+
+          text = text.replace(
+              '        String mode;\n    }',
+              '        String mode;\n'
+              '        double tripTargetLatitude;\n'
+              '        double tripTargetLongitude;\n'
+              '        long tripRemainingMs;\n'
+              '    }',
+              1
+          )
+
+          marker = '''    private static boolean isFinite(double value) {\n        return !Double.isNaN(value) && !Double.isInfinite(value);\n    }'''
+          replacement = '''    private static boolean isValidCoordinates(double latitude, double longitude) {\n        return isFinite(latitude)\n            && isFinite(longitude)\n            && latitude >= -90d\n            && latitude <= 90d\n            && longitude >= -180d\n            && longitude <= 180d;\n    }\n\n    private static boolean isFinite(double value) {\n        return !Double.isNaN(value) && !Double.isInfinite(value);\n    }'''
+          if marker not in text:
+              raise SystemExit("Could not locate SessionSnapshot isFinite helper")
+          text = text.replace(marker, replacement, 1)
+          snapshot.write_text(text, encoding="utf-8")
+
+          # ------------------------------------------------------------------
+          # Fixed bookmark: apply to the active mock session immediately.
+          # ------------------------------------------------------------------
+          bookmarks = root / "ui/BookmarksActivity.java"
+          text = bookmarks.read_text(encoding="utf-8")
+          text = text.replace(
+              'import com.github.warren_bank.mock_location.data_model.SharedPrefs;\n',
+              'import com.github.warren_bank.mock_location.data_model.SharedPrefs;\n'
+              'import com.github.warren_bank.mock_location.service.LocationService;\n'
+              'import com.github.warren_bank.mock_location.service.looper.LocationThreadManager;\n'
+              'import com.github.warren_bank.mock_location.ui.logic.BookmarkSelectionPolicy;\n',
+              1
+          )
+          old = '''    private void handleFixedPosition(LocPoint point) {\n        SharedPrefs.putTripOrigin(BookmarksActivity.this, point);\n        startMainActivity(0, null);\n    }'''
+          new = '''    private void handleFixedPosition(LocPoint point) {\n        SharedPrefs.putTripOrigin(BookmarksActivity.this, point);\n\n        if (BookmarkSelectionPolicy.shouldApplyFixedImmediately(LocationService.isStarted())) {\n            LocationThreadManager manager = LocationService.getLocationThreadManager();\n            if (manager != null) {\n                manager.jumpToLocation(point);\n            }\n        }\n\n        startMainActivity(0, null);\n    }'''
+          if old not in text:
+              raise SystemExit("Could not locate BookmarksActivity.handleFixedPosition")
+          bookmarks.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # Fixed tab must re-read a bookmark chosen while the child Activity already exists.
+          fixed = root / "ui/FixedPositionActivity.java"
+          text = fixed.read_text(encoding="utf-8")
+          old = '''    protected void onResume() {\n        super.onResume();\n        reset();\n    }'''
+          new = '''    protected void onResume() {\n        super.onResume();\n        originalLoc = SharedPrefs.getTripOrigin(FixedPositionActivity.this);\n        reset();\n    }'''
+          if old not in text:
+              raise SystemExit("Could not locate FixedPositionActivity.onResume")
+          fixed.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # ------------------------------------------------------------------
+          # Trip editor: reload bookmark values on resume and fix diff tracking.
+          # ------------------------------------------------------------------
+          trip = root / "ui/TripSimulationActivity.java"
+          text = trip.read_text(encoding="utf-8")
+          text = text.replace(
+              'import com.github.warren_bank.mock_location.service.LocationService;\n',
+              'import com.github.warren_bank.mock_location.service.LocationService;\n'
+              'import com.github.warren_bank.mock_location.ui.logic.TripEditState;\n',
+              1
+          )
+
+          text = text.replace('                    short mask = (1 << 0);  // 0x0001\n\n                    if (originalLocOrigin.equals(modifiedLocOrigin)) {\n                        // flip bit[0] to 0\n                        diff_fields &= ~mask;\n                    }\n                    else {\n                        // flip bit[0] to 1\n                        diff_fields |= mask;\n                    }',
+                              '                    short mask = TripEditState.ORIGIN_MASK;\n                    diff_fields = TripEditState.update(\n                        diff_fields,\n                        mask,\n                        !originalLocOrigin.equals(modifiedLocOrigin)\n                    );', 1)
+          text = text.replace('                    short mask = (1 << 1);  // 0x0002\n\n                    if (originalLocDestination.equals(modifiedLocDestination)) {\n                        // flip bit[1] to 0\n                        diff_fields &= ~mask;\n                    }\n                    else {\n                        // flip bit[1] to 1\n                        diff_fields |= mask;\n                    }',
+                              '                    short mask = TripEditState.DESTINATION_MASK;\n                    diff_fields = TripEditState.update(\n                        diff_fields,\n                        mask,\n                        !originalLocDestination.equals(modifiedLocDestination)\n                    );', 1)
+          text = text.replace('                    short mask = (1 << 2);  // 0x0004\n\n                    if (originalTripDuration != modifiedTripDuration) {\n                        // flip bit[2] to 0\n                        diff_fields &= ~mask;\n                    }\n                    else {\n                        // flip bit[2] to 1\n                        diff_fields |= mask;\n                    }',
+                              '                    short mask = TripEditState.DURATION_MASK;\n                    diff_fields = TripEditState.update(\n                        diff_fields,\n                        mask,\n                        originalTripDuration != modifiedTripDuration\n                    );', 1)
+
+          old_resume = '''    protected void onResume() {\n        super.onResume();\n        reset();\n    }\n\n    private void reset() {\n        input_trip_origin.setText(originalLocOrigin.toString());\n        input_trip_destination.setText(originalLocDestination.toString());\n        input_trip_duration.setText(Integer.toString(originalTripDuration, 10));\n\n        BookmarkItem bmItem;\n        bmItem = SharedPrefs.getBookmarkItem(TripSimulationActivity.this, originalLocOrigin);\n        if (bmItem != null) {\n            label_trip_origin.setText(bmItem.title);\n            label_trip_origin.setVisibility(View.VISIBLE);\n        }\n        bmItem = SharedPrefs.getBookmarkItem(TripSimulationActivity.this, originalLocDestination);\n        if (bmItem != null) {\n            label_trip_destination.setText(bmItem.title);\n            label_trip_destination.setVisibility(View.VISIBLE);\n        }\n\n        if (LocationService.isStarted())\n            button_toggle_state.setText(R.string.label_button_stop);\n\n        button_update.setVisibility(View.GONE);\n    }'''
+          new_resume = '''    protected void onResume() {\n        super.onResume();\n\n        LocPoint savedOrigin = SharedPrefs.getTripOrigin(TripSimulationActivity.this);\n        LocPoint savedDestination = SharedPrefs.getTripDestination(TripSimulationActivity.this);\n        int savedDuration = SharedPrefs.getTripDuration(TripSimulationActivity.this);\n\n        if (!LocationService.isStarted()) {\n            originalLocOrigin = savedOrigin;\n            originalLocDestination = savedDestination;\n            originalTripDuration = savedDuration;\n            diff_fields = 0;\n        }\n\n        reset(savedOrigin, savedDestination, savedDuration);\n    }\n\n    private void reset(LocPoint displayedOrigin, LocPoint displayedDestination, int displayedDuration) {\n        label_trip_origin.setVisibility(View.GONE);\n        label_trip_destination.setVisibility(View.GONE);\n\n        input_trip_origin.setText(displayedOrigin.toString());\n        input_trip_destination.setText(displayedDestination.toString());\n        input_trip_duration.setText(Integer.toString(displayedDuration, 10));\n\n        BookmarkItem bmItem;\n        bmItem = SharedPrefs.getBookmarkItem(TripSimulationActivity.this, displayedOrigin);\n        if (bmItem != null) {\n            label_trip_origin.setText(bmItem.title);\n            label_trip_origin.setVisibility(View.VISIBLE);\n        }\n        bmItem = SharedPrefs.getBookmarkItem(TripSimulationActivity.this, displayedDestination);\n        if (bmItem != null) {\n            label_trip_destination.setText(bmItem.title);\n            label_trip_destination.setVisibility(View.VISIBLE);\n        }\n\n        if (LocationService.isStarted()) {\n            button_toggle_state.setText(R.string.label_button_stop);\n            checkDiff();\n        }\n        else {\n            button_toggle_state.setText(R.string.label_button_start);\n            button_update.setVisibility(View.GONE);\n        }\n    }'''
+          if old_resume not in text:
+              raise SystemExit("Could not locate TripSimulationActivity reset block")
+          text = text.replace(old_resume, new_resume, 1)
+
+          old_persist = '''        short mask;\n\n        mask = (1 << 0);\n        if ((diff_fields & mask) == mask) {\n            SharedPrefs.putTripOrigin(TripSimulationActivity.this, modifiedLocOrigin);\n        }\n\n        mask = (1 << 1);\n        if ((diff_fields & mask) == mask) {\n            SharedPrefs.putTripDestination(TripSimulationActivity.this, modifiedLocDestination);\n        }\n\n        mask = (1 << 2);\n        if ((diff_fields & mask) == mask) {\n            SharedPrefs.putTripDuration(TripSimulationActivity.this, modifiedTripDuration);\n        }'''
+          new_persist = '''        SharedPrefs.putTripOrigin(TripSimulationActivity.this, modifiedLocOrigin);\n        SharedPrefs.putTripDestination(TripSimulationActivity.this, modifiedLocDestination);\n        SharedPrefs.putTripDuration(TripSimulationActivity.this, modifiedTripDuration);'''
+          if old_persist not in text:
+              raise SystemExit("Could not locate TripSimulationActivity persistence block")
+          text = text.replace(old_persist, new_persist, 1)
+          trip.write_text(text, encoding="utf-8")
+
+          # ------------------------------------------------------------------
+          # LocationThreadManager: fixed live jump, trip persistence, and no
+          # accidental trip cancellation when Follow preference is reloaded.
+          # ------------------------------------------------------------------
+          manager = root / "service/looper/LocationThreadManager.java"
+          text = manager.read_text(encoding="utf-8")
+          text = text.replace(
+              'import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;\n',
+              'import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;\n'
+              'import com.github.warren_bank.mock_location.service.recovery.TripProgress;\n',
+              1
+          )
+
+          old_jump = '''    public void jumpToLocation(LocPoint location) {\n        if (location == null) return;\n        synchronized (mLock) {\n            jumpToLocationLocked(location);\n        }\n        persistSessionMaybe(SystemClock.elapsedRealtime(), true);\n    }'''
+          new_jump = '''    public void jumpToLocation(LocPoint location) {\n        if (location == null) return;\n        synchronized (mLock) {\n            jumpToLocationLocked(location);\n            if (mIsStarted && !mFollowRealMovementEnabled) {\n                mFixedCountRemaining = mFixedCount;\n            }\n        }\n        updateMotionAndJoystickState();\n        persistSessionMaybe(SystemClock.elapsedRealtime(), true);\n    }'''
+          if old_jump not in text:
+              raise SystemExit("Could not locate LocationThreadManager.jumpToLocation")
+          text = text.replace(old_jump, new_jump, 1)
+
+          old_fly_tail = '''            mFlyTime = convertFlyTime_secondsToLoopIterations(trip_duration_seconds, mTimeInterval);\n            mCurrentSpeedMps = 0f;\n        }\n    }'''
+          new_fly_tail = '''            mFlyTime = convertFlyTime_secondsToLoopIterations(trip_duration_seconds, mTimeInterval);\n            mCurrentSpeedMps = 0f;\n        }\n\n        updateMotionAndJoystickState();\n        persistSessionMaybe(SystemClock.elapsedRealtime(), true);\n    }'''
+          if old_fly_tail not in text:
+              raise SystemExit("Could not locate LocationThreadManager.flyToLocation tail")
+          text = text.replace(old_fly_tail, new_fly_tail, 1)
+
+          old_follow = '''            mFollowRealMovementEnabled = newFollowEnabled;\n            mStepLengthMeters = newStepLength;'''
+          new_follow = '''            // A simulated trip owns movement until it reaches its target.\n            // Merely reloading preferences must not silently cancel the trip.\n            mFollowRealMovementEnabled = mIsFlyMode ? false : newFollowEnabled;\n            mStepLengthMeters = newStepLength;'''
+          if old_follow not in text:
+              raise SystemExit("Could not locate Follow preference assignment")
+          text = text.replace(old_follow, new_follow, 1)
+
+          old_cancel = '''\n            if (mFollowRealMovementEnabled && mIsFlyMode) {\n                mIsFlyMode = false;\n            }'''
+          if old_cancel not in text:
+              raise SystemExit("Could not locate old trip-cancel block")
+          text = text.replace(old_cancel, '', 1)
+
+          old_snapshot = '''            snapshot = new SessionSnapshot(\n                true,\n                mCurrentLocPoint.getLatitude(),\n                mCurrentLocPoint.getLongitude(),\n                mFollowRealMovementEnabled,\n                mStepLengthMeters,\n                mAggressiveKeepAlive,\n                mode\n            );'''
+          new_snapshot = '''            double tripTargetLatitude = 0d;\n            double tripTargetLongitude = 0d;\n            long tripRemainingMs = 0L;\n\n            if (mIsFlyMode && mTargetLocPoint != null) {\n                tripTargetLatitude = mTargetLocPoint.getLatitude();\n                tripTargetLongitude = mTargetLocPoint.getLongitude();\n                tripRemainingMs = TripProgress.remainingMillis(\n                    mFlyTime,\n                    mFlyTimeIndex,\n                    mTimeInterval\n                );\n            }\n\n            snapshot = new SessionSnapshot(\n                true,\n                mCurrentLocPoint.getLatitude(),\n                mCurrentLocPoint.getLongitude(),\n                mFollowRealMovementEnabled,\n                mStepLengthMeters,\n                mAggressiveKeepAlive,\n                mode,\n                tripTargetLatitude,\n                tripTargetLongitude,\n                tripRemainingMs\n            );'''
+          if old_snapshot not in text:
+              raise SystemExit("Could not locate session snapshot creation")
+          text = text.replace(old_snapshot, new_snapshot, 1)
+          manager.write_text(text, encoding="utf-8")
+
+          # ------------------------------------------------------------------
+          # LocationService: after Android recreates the service, resume a saved
+          # trip from its last injected point instead of freezing there.
+          # ------------------------------------------------------------------
+          service = root / "service/LocationService.java"
+          text = service.read_text(encoding="utf-8")
+          text = text.replace(
+              'import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;\n',
+              'import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;\n'
+              'import com.github.warren_bank.mock_location.service.recovery.TripProgress;\n',
+              1
+          )
+          old_restore = '''        running = true;\n        LTM.start(new LocPoint(snapshot.latitude, snapshot.longitude));\n        refreshWakeLock();'''
+          new_restore = '''        running = true;\n        LTM.start(new LocPoint(snapshot.latitude, snapshot.longitude));\n\n        if (snapshot.hasResumableTrip()) {\n            int remainingSeconds = TripProgress.secondsForRestore(snapshot.tripRemainingMs);\n            if (remainingSeconds > 0) {\n                LTM.flyToLocation(\n                    new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude),\n                    remainingSeconds\n                );\n            }\n        }\n\n        refreshWakeLock();'''
+          if old_restore not in text:
+              raise SystemExit("Could not locate LocationService restore block")
+          service.write_text(text.replace(old_restore, new_restore, 1), encoding="utf-8")
+          PY
+
+      - name: GREEN - run full unit test task
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace | tee ../green-v5-tests.log
+
+      - name: Build GMS and AOSP V5 debug APKs
+        run: |
+          cd android-studio-project
+          ./gradlew \
+            :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug \
+            :Mock-my-GPS:assembleEnglishWithAospLocationProvidersWithBackupRestoreSAFDebug \
+            --stacktrace | tee ../build-v5.log
+
+      - name: Verify V5 source integration
+        run: |
+          grep -q "BookmarkSelectionPolicy.shouldApplyFixedImmediately" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/BookmarksActivity.java
+          grep -q "manager.jumpToLocation(point)" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/BookmarksActivity.java
+          grep -q "originalLoc = SharedPrefs.getTripOrigin" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/FixedPositionActivity.java
+          grep -q "TripEditState.DURATION_MASK" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+          grep -q "SharedPrefs.putTripDuration" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+          grep -q "TripProgress.remainingMillis" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java
+          grep -q "mFollowRealMovementEnabled = mIsFlyMode ? false : newFollowEnabled" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java
+          grep -q "snapshot.hasResumableTrip" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/LocationService.java
+          grep -q "tripTargetLatitude" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshot.java
+          echo "V5 integration checks passed."
+
+      - name: Commit V5 implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-studio-project/Mock-my-GPS/src/main
+          git add android-studio-project/Mock-my-GPS/src/test
+          git commit -m "fix: refresh bookmarks and resume simulated trips"
+
+      - name: Upload V5 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-follow-real-movement-v5-apks
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Push V5 implementation branch
+        run: |
+          git push --force-with-lease origin follow-real-movement-v5
+
+      - name: Upload V5 verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-real-movement-v5-verification
+          path: |
+            red-v5.log
+            green-v5-tests.log
+            build-v5.log
+          if-no-files-found: warn
