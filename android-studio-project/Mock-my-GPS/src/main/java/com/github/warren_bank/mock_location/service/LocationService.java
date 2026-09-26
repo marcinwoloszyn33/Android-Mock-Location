@@ -408,6 +408,18 @@ public class LocationService extends Service {
         return running;
     }
 
+    public static boolean isFixedModeStarted() {
+        boolean managerStarted = LTM != null && LTM.isStarted();
+        boolean flyMode = managerStarted && LTM.isFlyMode();
+        return ActiveMockModePolicy.isFixedActive(running, managerStarted, flyMode);
+    }
+
+    public static boolean isTripModeStarted() {
+        boolean managerStarted = LTM != null && LTM.isStarted();
+        boolean flyMode = managerStarted && LTM.isFlyMode();
+        return ActiveMockModePolicy.isTripActive(running, managerStarted, flyMode);
+    }
+
     public static LocationThreadManager getLocationThreadManager() {
         return LTM;
     }

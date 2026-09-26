@@ -158,8 +158,8 @@ return active
 
     private static String sanitizeMode(boolean active, boolean followRealMovement, String mode) {
         if (!active) return MODE_FIXED;
-        if (followRealMovement) return MODE_FOLLOW_REAL_MOVEMENT;
         if (MODE_TRIP.equals(mode)) return MODE_TRIP;
+        if (followRealMovement) return MODE_FOLLOW_REAL_MOVEMENT;
         return MODE_FIXED;
     }
 

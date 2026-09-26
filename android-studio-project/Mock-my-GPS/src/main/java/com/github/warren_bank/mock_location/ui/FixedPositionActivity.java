@@ -40,7 +40,7 @@ public class FixedPositionActivity extends Activity implements RuntimePermission
             public void afterTextChanged(Editable s) {
                 label_fixed_position.setVisibility(View.GONE);
 
-                if (!LocationService.isStarted()) return;
+                if (!LocationService.isFixedModeStarted()) return;
 
                 try {
                     String fixed_position = s.toString();
@@ -63,7 +63,7 @@ public class FixedPositionActivity extends Activity implements RuntimePermission
             @Override
             public void onClick(View v) {
                 try {
-                    if (LocationService.isStarted()) {
+                    if (LocationService.isFixedModeStarted()) {
                         LocationService.doStop(FixedPositionActivity.this, true);
                         button_toggle_state.setText(R.string.label_button_start);
                         button_update.setVisibility(View.GONE);
@@ -80,7 +80,7 @@ public class FixedPositionActivity extends Activity implements RuntimePermission
             @Override
             public void onClick(View v) {
                 try {
-                    if (LocationService.isStarted()) {
+                    if (LocationService.isFixedModeStarted()) {
                         requestPermissions();
                     }
                     else {
@@ -108,8 +108,10 @@ public class FixedPositionActivity extends Activity implements RuntimePermission
             label_fixed_position.setVisibility(View.VISIBLE);
         }
 
-        if (LocationService.isStarted())
+        if (LocationService.isFixedModeStarted())
             button_toggle_state.setText(R.string.label_button_stop);
+        else
+            button_toggle_state.setText(R.string.label_button_start);
 
         button_update.setVisibility(View.GONE);
     }

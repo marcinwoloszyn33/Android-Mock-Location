@@ -53,7 +53,7 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
             public void afterTextChanged(Editable s) {
                 label_trip_origin.setVisibility(View.GONE);
 
-                if (!LocationService.isStarted()) return;
+                if (!LocationService.isTripModeStarted()) return;
 
                 try {
                     String trip_origin = s.toString();
@@ -76,7 +76,7 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
             public void afterTextChanged(Editable s) {
                 label_trip_destination.setVisibility(View.GONE);
 
-                if (!LocationService.isStarted()) return;
+                if (!LocationService.isTripModeStarted()) return;
 
                 try {
                     String trip_destination = s.toString();
@@ -97,7 +97,7 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
 
         input_trip_duration.addTextChangedListener(new TextWatcher() {
             public void afterTextChanged(Editable s) {
-                if (!LocationService.isStarted()) return;
+                if (!LocationService.isTripModeStarted()) return;
 
                 try {
                     String trip_duration = s.toString();
@@ -120,7 +120,7 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
             @Override
             public void onClick(View v) {
                 try {
-                    if (LocationService.isStarted()) {
+                    if (LocationService.isTripModeStarted()) {
                         LocationService.doStop(TripSimulationActivity.this, true);
                         button_toggle_state.setText(R.string.label_button_start);
                         button_update.setVisibility(View.GONE);
@@ -137,7 +137,7 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
             @Override
             public void onClick(View v) {
                 try {
-                    if (LocationService.isStarted()) {
+                    if (LocationService.isTripModeStarted()) {
                         requestPermissions();
                     }
                     else {
@@ -157,7 +157,7 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
         LocPoint savedDestination = SharedPrefs.getTripDestination(TripSimulationActivity.this);
         int savedDuration = SharedPrefs.getTripDuration(TripSimulationActivity.this);
 
-        if (!LocationService.isStarted()) {
+        if (!LocationService.isTripModeStarted()) {
             originalLocOrigin = savedOrigin;
             originalLocDestination = savedDestination;
             originalTripDuration = savedDuration;
@@ -187,7 +187,7 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
             label_trip_destination.setVisibility(View.VISIBLE);
         }
 
-        if (LocationService.isStarted()) {
+        if (LocationService.isTripModeStarted()) {
             button_toggle_state.setText(R.string.label_button_stop);
             checkDiff();
         }

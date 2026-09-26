@@ -10,6 +10,21 @@ public final class MotionControlPolicy {
         return sensorAvailable && activityRecognitionPermissionGrantedOrNotRequired;
     }
 
+    public static boolean shouldRunMotionTracker(
+        boolean started,
+        boolean followRealMovementEnabled
+    ) {
+        return started && followRealMovementEnabled;
+    }
+
+    public static boolean shouldAcceptRealMovementStep(
+        boolean started,
+        boolean followRealMovementEnabled,
+        boolean flyMode
+    ) {
+        return started && followRealMovementEnabled && !flyMode;
+    }
+
     public static boolean shouldShowJoystick(
         boolean started,
         boolean followRealMovementEnabled,

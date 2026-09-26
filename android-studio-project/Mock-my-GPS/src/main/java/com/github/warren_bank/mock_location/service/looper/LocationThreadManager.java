@@ -209,7 +209,9 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
 
         if (mFlyTimeIndex >= mFlyTime) {
             jumpToLocationLocked(mTargetLocPoint);
-            mFixedCountRemaining = (mTripHoldDestination) ? mFixedCount : -1;
+            mFixedCountRemaining = mFollowRealMovementEnabled
+                ? 0
+                : ((mTripHoldDestination) ? mFixedCount : -1);
             return new LocPoint(mCurrentLocPoint);
         }
         else {
@@ -265,11 +267,6 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         if (location == null) return;
 
         synchronized (mLock) {
-            if (mFollowRealMovementEnabled) {
-                mFollowRealMovementEnabled = false;
-                if (mRelativeMotionTracker != null) mRelativeMotionTracker.stop();
-            }
-
             if (mIsStarted && mFixedJoystickEnabled) {
                 hideJoyStick();
             }
@@ -360,7 +357,14 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     @Override
     public void onStep(float bearingDegrees, long timestampMs) {
         synchronized (mLock) {
-            if (!mIsStarted || !mFollowRealMovementEnabled || mIsFlyMode || mCurrentLocPoint == null)
+            if (
+                !MotionControlPolicy.shouldAcceptRealMovementStep(
+                    mIsStarted,
+                    mFollowRealMovementEnabled,
+                    mIsFlyMode
+                )
+                || mCurrentLocPoint == null
+            )
                 return;
 
             LocPoint moved = GeoMover.move(mCurrentLocPoint, mStepLengthMeters, bearingDegrees);
@@ -469,9 +473,10 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         boolean newAggressiveKeepAlive = EnhancedPrefs.getAggressiveKeepAlive(mContext);
 
         synchronized (mLock) {
-            // A simulated trip owns movement until it reaches its target.
-            // Merely reloading preferences must not silently cancel the trip.
-            mFollowRealMovementEnabled = mIsFlyMode ? false : newFollowEnabled;
+            // Keep the configured Follow state even during a simulated trip.
+            // onStep() ignores physical steps while fly mode is active, then
+            // resumes them automatically as soon as the trip finishes.
+            mFollowRealMovementEnabled = newFollowEnabled;
             mStepLengthMeters = newStepLength;
             mWatchdogEnabled = newWatchdogEnabled;
             mWatchdogTimeoutSeconds = newWatchdogTimeoutSeconds;
@@ -506,7 +511,7 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
             return;
         }
 
-        if (follow) {
+        if (MotionControlPolicy.shouldRunMotionTracker(started, follow)) {
             if (mRelativeMotionTracker != null) mRelativeMotionTracker.start();
         }
         else {
