@@ -1,0 +1,341 @@
+name: Build Follow Real Movement V6
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout V5 implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: follow-real-movement-v5
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Create V6 implementation branch
+        run: |
+          git fetch origin follow-real-movement-v5
+          git fetch origin follow-real-movement-v6:refs/remotes/origin/follow-real-movement-v6 || true
+          git checkout -B follow-real-movement-v6 origin/follow-real-movement-v5
+          git status --short
+
+      - name: RED - add V6 regression tests first
+        run: |
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/ActiveMockModePolicyTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.service;
+
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class ActiveMockModePolicyTest {
+              @Test
+              public void fixedIsActiveOnlyOutsideTrip() {
+                  assertTrue(ActiveMockModePolicy.isFixedActive(true, true, false));
+                  assertFalse(ActiveMockModePolicy.isFixedActive(true, true, true));
+                  assertFalse(ActiveMockModePolicy.isFixedActive(false, true, false));
+              }
+
+              @Test
+              public void tripIsActiveOnlyWhileFlyModeRuns() {
+                  assertTrue(ActiveMockModePolicy.isTripActive(true, true, true));
+                  assertFalse(ActiveMockModePolicy.isTripActive(true, true, false));
+                  assertFalse(ActiveMockModePolicy.isTripActive(false, true, true));
+              }
+          }
+          EOF
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/motion/MotionControlPolicyV6Test.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.motion;
+
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class MotionControlPolicyV6Test {
+              @Test
+              public void trackerStaysRunningDuringTripWhenFollowIsConfigured() {
+                  assertTrue(MotionControlPolicy.shouldRunMotionTracker(true, true));
+              }
+
+              @Test
+              public void tripTemporarilyRejectsRealStepWithoutDisablingFollowSetting() {
+                  assertFalse(MotionControlPolicy.shouldAcceptRealMovementStep(true, true, true));
+                  assertTrue(MotionControlPolicy.shouldAcceptRealMovementStep(true, true, false));
+              }
+          }
+          EOF
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotV6Test.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.recovery;
+
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class SessionSnapshotV6Test {
+              @Test
+              public void tripMayRememberThatFollowShouldResumeAfterTrip() {
+                  SessionSnapshot snapshot = new SessionSnapshot(
+                      true,
+                      52.2297d,
+                      21.0122d,
+                      true,
+                      0.74d,
+                      true,
+                      SessionSnapshot.MODE_TRIP,
+                      52.2400d,
+                      21.0300d,
+                      30000L
+                  );
+
+                  assertEquals(SessionSnapshot.MODE_TRIP, snapshot.mode);
+                  assertTrue(snapshot.followRealMovement);
+                  assertTrue(snapshot.hasResumableTrip());
+              }
+          }
+          EOF
+
+      - name: RED - verify V6 tests fail before production code
+        run: |
+          cd android-studio-project
+          chmod +x gradlew
+          set +e
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace > ../red-v6.log 2>&1
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "RED phase unexpectedly passed."
+            cat ../red-v6.log
+            exit 1
+          fi
+
+          if ! grep -Eq "ActiveMockModePolicy|shouldRunMotionTracker|shouldAcceptRealMovementStep|SessionSnapshotV6Test" ../red-v6.log; then
+            echo "RED failed, but not because the V6 regressions are still present."
+            cat ../red-v6.log
+            exit 1
+          fi
+
+          echo "RED confirmed: V6 regression tests fail before implementation."
+
+      - name: GREEN - apply V6 production changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location")
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"Could not locate {label} in {path}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # ---------------------------------------------------------------
+          # Mode-specific service state. There is still one mock stream, but
+          # Fixed and Trip buttons no longer mirror one global boolean.
+          # ---------------------------------------------------------------
+          service_dir = root / "service"
+          (service_dir / "ActiveMockModePolicy.java").write_text(r'''package com.github.warren_bank.mock_location.service;
+
+          public final class ActiveMockModePolicy {
+              private ActiveMockModePolicy() {}
+
+              public static boolean isFixedActive(boolean serviceRunning, boolean managerStarted, boolean flyMode) {
+                  return serviceRunning && managerStarted && !flyMode;
+              }
+
+              public static boolean isTripActive(boolean serviceRunning, boolean managerStarted, boolean flyMode) {
+                  return serviceRunning && managerStarted && flyMode;
+              }
+          }
+          ''', encoding="utf-8")
+
+          # ---------------------------------------------------------------
+          # Motion policy: keep the detector alive while a simulated trip is
+          # running, but ignore its step events until Trip ends. This avoids
+          # losing Follow Real Movement after the first simulated trip.
+          # ---------------------------------------------------------------
+          motion_policy = root / "service/motion/MotionControlPolicy.java"
+          replace_once(
+              motion_policy,
+              '''    public static boolean shouldShowJoystick(\n''',
+              '''    public static boolean shouldRunMotionTracker(\n        boolean started,\n        boolean followRealMovementEnabled\n    ) {\n        return started && followRealMovementEnabled;\n    }\n\n    public static boolean shouldAcceptRealMovementStep(\n        boolean started,\n        boolean followRealMovementEnabled,\n        boolean flyMode\n    ) {\n        return started && followRealMovementEnabled && !flyMode;\n    }\n\n    public static boolean shouldShowJoystick(\n''',
+              "V6 motion-policy insertion point"
+          )
+
+          # ---------------------------------------------------------------
+          # A TRIP snapshot is allowed to remember followRealMovement=true.
+          # That flag means: resume physical following after the trip ends.
+          # ---------------------------------------------------------------
+          snapshot = root / "service/recovery/SessionSnapshot.java"
+          replace_once(
+              snapshot,
+              '''    private static String sanitizeMode(boolean active, boolean followRealMovement, String mode) {\n        if (!active) return MODE_FIXED;\n        if (followRealMovement) return MODE_FOLLOW_REAL_MOVEMENT;\n        if (MODE_TRIP.equals(mode)) return MODE_TRIP;\n        return MODE_FIXED;\n    }''',
+              '''    private static String sanitizeMode(boolean active, boolean followRealMovement, String mode) {\n        if (!active) return MODE_FIXED;\n        if (MODE_TRIP.equals(mode)) return MODE_TRIP;\n        if (followRealMovement) return MODE_FOLLOW_REAL_MOVEMENT;\n        return MODE_FIXED;\n    }''',
+              "trip mode priority in SessionSnapshot"
+          )
+
+          # ---------------------------------------------------------------
+          # LocationThreadManager: simulated Trip no longer destroys the
+          # user's Follow Real Movement setting. Physical steps are ignored
+          # by policy while fly mode is active and resume immediately after.
+          # ---------------------------------------------------------------
+          manager = root / "service/looper/LocationThreadManager.java"
+          text = manager.read_text(encoding="utf-8")
+
+          old_trip_disable = '''            if (mFollowRealMovementEnabled) {\n                mFollowRealMovementEnabled = false;\n                if (mRelativeMotionTracker != null) mRelativeMotionTracker.stop();\n            }\n\n'''
+          if old_trip_disable not in text:
+              raise SystemExit("Could not locate V5 follow-disable block in flyToLocation")
+          text = text.replace(old_trip_disable, "", 1)
+
+          old_import = '''            // A simulated trip owns movement until it reaches its target.\n            // Merely reloading preferences must not silently cancel the trip.\n            mFollowRealMovementEnabled = mIsFlyMode ? false : newFollowEnabled;'''
+          new_import = '''            // Keep the configured Follow state even during a simulated trip.\n            // onStep() ignores physical steps while fly mode is active, then\n            // resumes them automatically as soon as the trip finishes.\n            mFollowRealMovementEnabled = newFollowEnabled;'''
+          if old_import not in text:
+              raise SystemExit("Could not locate V5 follow import policy")
+          text = text.replace(old_import, new_import, 1)
+
+          old_tracker = '''        if (follow) {\n            if (mRelativeMotionTracker != null) mRelativeMotionTracker.start();\n        }\n        else {\n            if (mRelativeMotionTracker != null) mRelativeMotionTracker.stop();\n        }'''
+          new_tracker = '''        if (MotionControlPolicy.shouldRunMotionTracker(started, follow)) {\n            if (mRelativeMotionTracker != null) mRelativeMotionTracker.start();\n        }\n        else {\n            if (mRelativeMotionTracker != null) mRelativeMotionTracker.stop();\n        }'''
+          if old_tracker not in text:
+              raise SystemExit("Could not locate tracker state block")
+          text = text.replace(old_tracker, new_tracker, 1)
+
+          old_step_guard = '''            if (!mIsStarted || !mFollowRealMovementEnabled || mIsFlyMode || mCurrentLocPoint == null)\n                return;'''
+          new_step_guard = '''            if (\n                !MotionControlPolicy.shouldAcceptRealMovementStep(\n                    mIsStarted,\n                    mFollowRealMovementEnabled,\n                    mIsFlyMode\n                )\n                || mCurrentLocPoint == null\n            )\n                return;'''
+          if old_step_guard not in text:
+              raise SystemExit("Could not locate V5 onStep guard")
+          text = text.replace(old_step_guard, new_step_guard, 1)
+
+          old_trip_finish = '''            mFixedCountRemaining = (mTripHoldDestination) ? mFixedCount : -1;'''
+          new_trip_finish = '''            mFixedCountRemaining = mFollowRealMovementEnabled\n                ? 0\n                : ((mTripHoldDestination) ? mFixedCount : -1);'''
+          if old_trip_finish not in text:
+              raise SystemExit("Could not locate trip completion fixed-count state")
+          text = text.replace(old_trip_finish, new_trip_finish, 1)
+
+          manager.write_text(text, encoding="utf-8")
+
+          # ---------------------------------------------------------------
+          # LocationService exposes the actually active mode to each tab.
+          # ---------------------------------------------------------------
+          service = root / "service/LocationService.java"
+          replace_once(
+              service,
+              '''    public static boolean isStarted() {\n        return running;\n    }\n\n    public static LocationThreadManager getLocationThreadManager() {''',
+              '''    public static boolean isStarted() {\n        return running;\n    }\n\n    public static boolean isFixedModeStarted() {\n        boolean managerStarted = LTM != null && LTM.isStarted();\n        boolean flyMode = managerStarted && LTM.isFlyMode();\n        return ActiveMockModePolicy.isFixedActive(running, managerStarted, flyMode);\n    }\n\n    public static boolean isTripModeStarted() {\n        boolean managerStarted = LTM != null && LTM.isStarted();\n        boolean flyMode = managerStarted && LTM.isFlyMode();\n        return ActiveMockModePolicy.isTripActive(running, managerStarted, flyMode);\n    }\n\n    public static LocationThreadManager getLocationThreadManager() {''',
+              "mode-specific LocationService status methods"
+          )
+
+          # ---------------------------------------------------------------
+          # Fixed tab follows Fixed/FOLLOW state only, not Trip state.
+          # Also explicitly resets START when Fixed is inactive.
+          # ---------------------------------------------------------------
+          fixed = root / "ui/FixedPositionActivity.java"
+          ftext = fixed.read_text(encoding="utf-8")
+          if "LocationService.isStarted()" not in ftext:
+              raise SystemExit("Expected global service status checks in FixedPositionActivity")
+          ftext = ftext.replace("LocationService.isStarted()", "LocationService.isFixedModeStarted()")
+
+          old_fixed_reset = '''        if (LocationService.isFixedModeStarted())\n            button_toggle_state.setText(R.string.label_button_stop);\n\n        button_update.setVisibility(View.GONE);'''
+          new_fixed_reset = '''        if (LocationService.isFixedModeStarted())\n            button_toggle_state.setText(R.string.label_button_stop);\n        else\n            button_toggle_state.setText(R.string.label_button_start);\n\n        button_update.setVisibility(View.GONE);'''
+          if old_fixed_reset not in ftext:
+              raise SystemExit("Could not locate Fixed reset button state")
+          ftext = ftext.replace(old_fixed_reset, new_fixed_reset, 1)
+          fixed.write_text(ftext, encoding="utf-8")
+
+          # ---------------------------------------------------------------
+          # Trip tab follows Trip state only, not Fixed/FOLLOW state.
+          # ---------------------------------------------------------------
+          trip = root / "ui/TripSimulationActivity.java"
+          ttext = trip.read_text(encoding="utf-8")
+          if "LocationService.isStarted()" not in ttext:
+              raise SystemExit("Expected global service status checks in TripSimulationActivity")
+          ttext = ttext.replace("LocationService.isStarted()", "LocationService.isTripModeStarted()")
+          trip.write_text(ttext, encoding="utf-8")
+          PY
+
+      - name: GREEN - run full unit test task
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace | tee ../green-v6-tests.log
+
+      - name: Build GMS and AOSP V6 debug APKs
+        run: |
+          cd android-studio-project
+          ./gradlew \
+            :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug \
+            :Mock-my-GPS:assembleEnglishWithAospLocationProvidersWithBackupRestoreSAFDebug \
+            --stacktrace | tee ../build-v6.log
+
+      - name: Verify V6 source integration
+        run: |
+          grep -q "isFixedModeStarted" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/LocationService.java
+          grep -q "isTripModeStarted" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/LocationService.java
+          grep -q "shouldRunMotionTracker" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/motion/MotionControlPolicy.java
+          grep -q "shouldAcceptRealMovementStep" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/motion/MotionControlPolicy.java
+          grep -q "LocationService.isFixedModeStarted()" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/FixedPositionActivity.java
+          grep -q "LocationService.isTripModeStarted()" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java")
+          text = p.read_text(encoding="utf-8")
+          start = text.index("public void flyToLocation")
+          end = text.index("public boolean isFlyMode", start)
+          fly = text[start:end]
+          if "mFollowRealMovementEnabled = false" in fly:
+              raise SystemExit("V6 regression: flyToLocation still disables Follow Real Movement")
+          print("V6 follow/trip integration check passed.")
+          PY
+
+          echo "V6 integration checks passed."
+
+      - name: Commit V6 implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-studio-project/Mock-my-GPS/src/main
+          git add android-studio-project/Mock-my-GPS/src/test
+          git commit -m "fix: restore real movement after trip and separate mode controls"
+
+      - name: Upload V6 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-follow-real-movement-v6-apks
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Push V6 implementation branch
+        run: |
+          git push --force-with-lease origin follow-real-movement-v6
+
+      - name: Upload V6 verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-real-movement-v6-verification
+          path: |
+            red-v6.log
+            green-v6-tests.log
+            build-v6.log
+          if-no-files-found: warn
