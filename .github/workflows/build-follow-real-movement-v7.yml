@@ -1,0 +1,275 @@
+name: Build Follow Real Movement V7
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout V6 implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: follow-real-movement-v6
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Create V7 implementation branch
+        run: |
+          git fetch origin follow-real-movement-v6
+          git fetch origin follow-real-movement-v7:refs/remotes/origin/follow-real-movement-v7 || true
+          git checkout -B follow-real-movement-v7 origin/follow-real-movement-v6
+          git status --short
+
+      - name: RED - add one-tap Trip regression tests first
+        run: |
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/ui/logic
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/ui/logic/RuntimeStartRouterTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.ui.logic;
+
+          import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsListener;
+
+          import org.junit.Test;
+
+          import static org.junit.Assert.*;
+
+          public class RuntimeStartRouterTest {
+              private static final class Marker implements RuntimePermissionsListener {
+                  @Override
+                  public void doStart() {}
+              }
+
+              @Test
+              public void explicitTripRequesterWinsOverStaleCurrentActivity() {
+                  Marker trip = new Marker();
+                  Marker staleFixed = new Marker();
+
+                  RuntimePermissionsListener chosen =
+                      RuntimeStartRouter.choose(trip, staleFixed);
+
+                  assertSame(trip, chosen);
+              }
+
+              @Test
+              public void currentActivityRemainsFallbackForLegacyCallers() {
+                  Marker current = new Marker();
+
+                  RuntimePermissionsListener chosen =
+                      RuntimeStartRouter.choose(null, current);
+
+                  assertSame(current, chosen);
+              }
+          }
+          EOF
+
+      - name: RED - verify regression test fails before production code
+        run: |
+          cd android-studio-project
+          chmod +x gradlew
+          set +e
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace > ../red-v7.log 2>&1
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "RED phase unexpectedly passed."
+            cat ../red-v7.log
+            exit 1
+          fi
+
+          if ! grep -q "RuntimeStartRouter" ../red-v7.log; then
+            echo "RED failed, but not because the V7 routing class is missing."
+            cat ../red-v7.log
+            exit 1
+          fi
+
+          echo "RED confirmed: one-tap Trip regression test fails before V7 implementation."
+
+      - name: GREEN - apply minimal one-tap Trip fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location")
+
+          router = root / "ui/logic/RuntimeStartRouter.java"
+          router.parent.mkdir(parents=True, exist_ok=True)
+          router.write_text(
+              "package com.github.warren_bank.mock_location.ui.logic;\n\n"
+              "import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsListener;\n\n"
+              "public final class RuntimeStartRouter {\n"
+              "    private RuntimeStartRouter() {}\n\n"
+              "    public static RuntimePermissionsListener choose(\n"
+              "        RuntimePermissionsListener explicitRequester,\n"
+              "        RuntimePermissionsListener currentActivity\n"
+              "    ) {\n"
+              "        return (explicitRequester != null) ? explicitRequester : currentActivity;\n"
+              "    }\n"
+              "}\n",
+              encoding="utf-8"
+          )
+
+          requester = root / "ui/interfaces/RuntimePermissionsRequester.java"
+          text = requester.read_text(encoding="utf-8")
+          marker = "    public void requestRuntimePermissions();\n"
+          addition = marker + "    public void requestRuntimePermissions(RuntimePermissionsListener listener);\n"
+          if marker not in text:
+              raise SystemExit("Could not locate RuntimePermissionsRequester marker")
+          requester.write_text(text.replace(marker, addition, 1), encoding="utf-8")
+
+          main = root / "ui/AospMainActivity.java"
+          text = main.read_text(encoding="utf-8")
+
+          import_marker = "import com.github.warren_bank.mock_location.service.LocationService;\n"
+          if "ui.logic.RuntimeStartRouter" not in text:
+              if import_marker not in text:
+                  raise SystemExit("Could not locate AospMainActivity import marker")
+              text = text.replace(
+                  import_marker,
+                  import_marker + "import com.github.warren_bank.mock_location.ui.logic.RuntimeStartRouter;\n",
+                  1
+              )
+
+          field_marker = "    private TabHost tabHost;\n"
+          if "pendingRuntimePermissionsListener" not in text:
+              if field_marker not in text:
+                  raise SystemExit("Could not locate AospMainActivity field marker")
+              text = text.replace(
+                  field_marker,
+                  field_marker + "    private RuntimePermissionsListener pendingRuntimePermissionsListener;\n",
+                  1
+              )
+
+          old = (
+              "    public void requestRuntimePermissions() {\n"
+              "        RuntimePermissions.requestPermissions(/* activity */ AospMainActivity.this, /* listener */ AospMainActivity.this);\n"
+              "    }\n"
+          )
+          new = (
+              "    public void requestRuntimePermissions() {\n"
+              "        pendingRuntimePermissionsListener = null;\n"
+              "        RuntimePermissions.requestPermissions(/* activity */ AospMainActivity.this, /* listener */ AospMainActivity.this);\n"
+              "    }\n\n"
+              "    public void requestRuntimePermissions(RuntimePermissionsListener listener) {\n"
+              "        pendingRuntimePermissionsListener = listener;\n"
+              "        RuntimePermissions.requestPermissions(/* activity */ AospMainActivity.this, /* listener */ AospMainActivity.this);\n"
+              "    }\n"
+          )
+          if old not in text:
+              raise SystemExit("Could not locate requestRuntimePermissions() in AospMainActivity")
+          text = text.replace(old, new, 1)
+
+          old = (
+              "    public void onPermissionsGranted() {\n"
+              "        RuntimePermissionsListener listener = (RuntimePermissionsListener) getCurrentActivity();\n"
+              "        listener.doStart();\n"
+              "    }\n"
+          )
+          new = (
+              "    public void onPermissionsGranted() {\n"
+              "        RuntimePermissionsListener current = null;\n"
+              "        try {\n"
+              "            current = (RuntimePermissionsListener) getCurrentActivity();\n"
+              "        }\n"
+              "        catch (Exception e) {}\n\n"
+              "        RuntimePermissionsListener listener = RuntimeStartRouter.choose(\n"
+              "            pendingRuntimePermissionsListener,\n"
+              "            current\n"
+              "        );\n"
+              "        pendingRuntimePermissionsListener = null;\n\n"
+              "        if (listener != null) {\n"
+              "            listener.doStart();\n"
+              "        }\n"
+              "    }\n"
+          )
+          if old not in text:
+              raise SystemExit("Could not locate onPermissionsGranted() in AospMainActivity")
+          text = text.replace(old, new, 1)
+
+          denied_marker = "    public void onPermissionsDenied(String[] permissions) {\n"
+          if denied_marker not in text:
+              raise SystemExit("Could not locate onPermissionsDenied() in AospMainActivity")
+          text = text.replace(
+              denied_marker,
+              denied_marker + "        pendingRuntimePermissionsListener = null;\n",
+              1
+          )
+
+          main.write_text(text, encoding="utf-8")
+
+          trip = root / "ui/TripSimulationActivity.java"
+          text = trip.read_text(encoding="utf-8")
+          old_call = "        requester.requestRuntimePermissions();\n"
+          new_call = "        requester.requestRuntimePermissions(TripSimulationActivity.this);\n"
+          if old_call not in text:
+              raise SystemExit("Could not locate Trip requestRuntimePermissions() call")
+          trip.write_text(text.replace(old_call, new_call, 1), encoding="utf-8")
+          PY
+
+      - name: GREEN - run full unit test task
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace | tee ../green-v7-tests.log
+
+      - name: Build GMS and AOSP V7 debug APKs
+        run: |
+          cd android-studio-project
+          ./gradlew \
+            :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug \
+            :Mock-my-GPS:assembleEnglishWithAospLocationProvidersWithBackupRestoreSAFDebug \
+            --stacktrace | tee ../build-v7.log
+
+      - name: Verify V7 integration is minimal
+        run: |
+          grep -q "pendingRuntimePermissionsListener" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/AospMainActivity.java
+          grep -q "RuntimeStartRouter.choose" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/AospMainActivity.java
+          grep -q "requestRuntimePermissions(TripSimulationActivity.this)" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+          grep -q "requestRuntimePermissions();" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/FixedPositionActivity.java
+          echo "V7 one-tap Trip integration checks passed."
+
+      - name: Commit V7 implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-studio-project/Mock-my-GPS/src/main
+          git add android-studio-project/Mock-my-GPS/src/test
+          git commit -m "fix: route Trip start to the requesting tab"
+
+      - name: Upload V7 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-follow-real-movement-v7-apks
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Push V7 implementation branch
+        run: |
+          git push --force-with-lease origin follow-real-movement-v7
+
+      - name: Upload V7 verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-real-movement-v7-verification
+          path: |
+            red-v7.log
+            green-v7-tests.log
+            build-v7.log
+          if-no-files-found: warn
