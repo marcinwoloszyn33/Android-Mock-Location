@@ -6,6 +6,7 @@ import com.github.warren_bank.mock_location.data_model.LocPoint;
 import com.github.warren_bank.mock_location.data_model.SharedPrefs;
 import com.github.warren_bank.mock_location.security_model.RuntimePermissions;
 import com.github.warren_bank.mock_location.service.LocationService;
+import com.github.warren_bank.mock_location.ui.logic.RuntimeStartRouter;
 import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsListener;
 import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsRequester;
 
@@ -29,6 +30,7 @@ import java.util.ArrayList;
 
 public class AospMainActivity extends ActivityGroup implements RuntimePermissionsRequester, RuntimePermissions.RuntimePermissionsListener {
     private TabHost tabHost;
+    private RuntimePermissionsListener pendingRuntimePermissionsListener;
 
     // =============================================================================================
     // Lifecycle Events:
@@ -257,6 +259,12 @@ public class AospMainActivity extends ActivityGroup implements RuntimePermission
     // =============================================================================================
 
     public void requestRuntimePermissions() {
+        pendingRuntimePermissionsListener = null;
+        RuntimePermissions.requestPermissions(/* activity */ AospMainActivity.this, /* listener */ AospMainActivity.this);
+    }
+
+    public void requestRuntimePermissions(RuntimePermissionsListener listener) {
+        pendingRuntimePermissionsListener = listener;
         RuntimePermissions.requestPermissions(/* activity */ AospMainActivity.this, /* listener */ AospMainActivity.this);
     }
 
@@ -265,11 +273,25 @@ public class AospMainActivity extends ActivityGroup implements RuntimePermission
     // =============================================================================================
 
     public void onPermissionsGranted() {
-        RuntimePermissionsListener listener = (RuntimePermissionsListener) getCurrentActivity();
-        listener.doStart();
+        RuntimePermissionsListener current = null;
+        try {
+            current = (RuntimePermissionsListener) getCurrentActivity();
+        }
+        catch (Exception e) {}
+
+        RuntimePermissionsListener listener = RuntimeStartRouter.choose(
+            pendingRuntimePermissionsListener,
+            current
+        );
+        pendingRuntimePermissionsListener = null;
+
+        if (listener != null) {
+            listener.doStart();
+        }
     }
 
     public void onPermissionsDenied(String[] permissions) {
+        pendingRuntimePermissionsListener = null;
         String text = "The following list contains required permissions that are not yet granted:\n  " + TextUtils.join("\n  ", permissions);
         Toast.makeText(AospMainActivity.this, text, Toast.LENGTH_LONG).show();
     }

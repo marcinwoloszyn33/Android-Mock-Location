@@ -212,7 +212,7 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
 
     private void requestPermissions() {
         RuntimePermissionsRequester requester = (RuntimePermissionsRequester) getParent();
-        requester.requestRuntimePermissions();
+        requester.requestRuntimePermissions(TripSimulationActivity.this);
     }
 
     // =============================================================================================
