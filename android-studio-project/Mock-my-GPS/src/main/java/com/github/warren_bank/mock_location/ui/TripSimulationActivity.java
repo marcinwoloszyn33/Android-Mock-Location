@@ -5,6 +5,8 @@ import com.github.warren_bank.mock_location.data_model.BookmarkItem;
 import com.github.warren_bank.mock_location.data_model.LocPoint;
 import com.github.warren_bank.mock_location.data_model.SharedPrefs;
 import com.github.warren_bank.mock_location.service.LocationService;
+import com.github.warren_bank.mock_location.security_model.RuntimePermissions;
+import com.github.warren_bank.mock_location.ui.logic.TripStartPermissionPolicy;
 import com.github.warren_bank.mock_location.ui.logic.TripEditState;
 import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsListener;
 import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsRequester;
@@ -211,8 +213,16 @@ public class TripSimulationActivity extends Activity implements RuntimePermissio
     // =============================================================================================
 
     private void requestPermissions() {
+        boolean mandatoryLocationPermissionsGranted =
+            RuntimePermissions.hasMandatoryPermissions(TripSimulationActivity.this);
+
+        if (TripStartPermissionPolicy.shouldStartImmediately(mandatoryLocationPermissionsGranted)) {
+            doStart();
+            return;
+        }
+
         RuntimePermissionsRequester requester = (RuntimePermissionsRequester) getParent();
-        requester.requestRuntimePermissions(TripSimulationActivity.this);
+        requester.requestTripRuntimePermissions(TripSimulationActivity.this);
     }
 
     // =============================================================================================

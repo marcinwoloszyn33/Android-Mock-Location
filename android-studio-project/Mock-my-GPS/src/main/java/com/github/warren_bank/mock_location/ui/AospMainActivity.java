@@ -268,6 +268,14 @@ public class AospMainActivity extends ActivityGroup implements RuntimePermission
         RuntimePermissions.requestPermissions(/* activity */ AospMainActivity.this, /* listener */ AospMainActivity.this);
     }
 
+    public void requestTripRuntimePermissions(RuntimePermissionsListener listener) {
+        pendingRuntimePermissionsListener = listener;
+        RuntimePermissions.requestTripPermissions(
+            /* activity */ AospMainActivity.this,
+            /* listener */ AospMainActivity.this
+        );
+    }
+
     // =============================================================================================
     // interface implementation: RuntimePermissions.RuntimePermissionsListener
     // =============================================================================================

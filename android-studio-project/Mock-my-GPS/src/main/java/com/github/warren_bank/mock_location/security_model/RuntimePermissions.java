@@ -19,6 +19,7 @@ public final class RuntimePermissions {
     private static final int REQUEST_CODE_PERMISSIONS                = 999;
     private static final int REQUEST_CODE_DRAW_OVERLAYS              = 998;
     private static final int REQUEST_CODE_ACCESS_BACKGROUND_LOCATION = 997;
+    private static final int REQUEST_CODE_TRIP_PERMISSIONS           = 996;
 
     private static final ArrayList<String> MANDATORY_PERMISSIONS = new ArrayList<String>(
         Arrays.asList(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
@@ -45,6 +46,21 @@ public final class RuntimePermissions {
 
         // no permissions to request
         onPermissionsGranted(activity, listener);
+    }
+
+    public static void requestTripPermissions(Activity activity, RuntimePermissionsListener listener) {
+        if (Build.VERSION.SDK_INT < 23 || hasMandatoryPermissions(activity)) {
+            listener.onPermissionsGranted();
+            return;
+        }
+
+        activity.requestPermissions(
+            new String[] {
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            },
+            REQUEST_CODE_TRIP_PERMISSIONS
+        );
     }
 
     public static boolean canAccessBackgroundLocation(Context context) {
@@ -131,7 +147,27 @@ public final class RuntimePermissions {
             }
             break;
 
-            case REQUEST_CODE_ACCESS_BACKGROUND_LOCATION : {
+            case REQUEST_CODE_TRIP_PERMISSIONS : {
+            ArrayList<String> deniedPermissions = new ArrayList<>();
+
+            for (String permission : MANDATORY_PERMISSIONS) {
+                if (activity.checkCallingOrSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+                    deniedPermissions.add(permission);
+                }
+            }
+
+            if (deniedPermissions.isEmpty()) {
+                listener.onPermissionsGranted();
+            }
+            else {
+                listener.onPermissionsDenied(
+                    deniedPermissions.toArray(new String[deniedPermissions.size()])
+                );
+            }
+        }
+        break;
+
+        case REQUEST_CODE_ACCESS_BACKGROUND_LOCATION : {
                 if (canAccessBackgroundLocation(activity))
                     listener.onPermissionsGranted();
                 else
