@@ -1,0 +1,332 @@
+name: Build Follow Real Movement V8
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout V7 implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: follow-real-movement-v7
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Create V8 implementation branch
+        run: |
+          git fetch origin follow-real-movement-v7
+          git fetch origin follow-real-movement-v8:refs/remotes/origin/follow-real-movement-v8 || true
+          git checkout -B follow-real-movement-v8 origin/follow-real-movement-v7
+          git status --short
+
+      - name: RED - add Trip one-tap permission tests first
+        run: |
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/ui/logic
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/ui/logic/TripStartPermissionPolicyTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.ui.logic;
+
+          import org.junit.Test;
+
+          import static org.junit.Assert.*;
+
+          public class TripStartPermissionPolicyTest {
+              @Test
+              public void startsImmediatelyWhenMandatoryLocationPermissionsAlreadyExist() {
+                  assertTrue(TripStartPermissionPolicy.shouldStartImmediately(true));
+              }
+
+              @Test
+              public void usesDedicatedPermissionFlowWhenMandatoryLocationPermissionsAreMissing() {
+                  assertFalse(TripStartPermissionPolicy.shouldStartImmediately(false));
+              }
+          }
+          EOF
+
+      - name: RED - verify regression test fails before production code
+        run: |
+          cd android-studio-project
+          chmod +x gradlew
+          set +e
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace > ../red-v8.log 2>&1
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "RED phase unexpectedly passed."
+            cat ../red-v8.log
+            exit 1
+          fi
+
+          if ! grep -q "TripStartPermissionPolicy" ../red-v8.log; then
+            echo "RED failed, but not because the V8 Trip permission policy is missing."
+            cat ../red-v8.log
+            exit 1
+          fi
+
+          echo "RED confirmed: V8 one-tap Trip regression test fails before implementation."
+
+      - name: GREEN - apply dedicated one-tap Trip permission path
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location")
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit("Could not locate " + label)
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          policy = root / "ui/logic/TripStartPermissionPolicy.java"
+          policy.parent.mkdir(parents=True, exist_ok=True)
+          policy.write_text(
+              """package com.github.warren_bank.mock_location.ui.logic;
+
+          public final class TripStartPermissionPolicy {
+              private TripStartPermissionPolicy() {}
+
+              public static boolean shouldStartImmediately(boolean mandatoryLocationPermissionsGranted) {
+                  return mandatoryLocationPermissionsGranted;
+              }
+          }
+          """,
+              encoding="utf-8"
+          )
+
+          runtime = root / "security_model/RuntimePermissions.java"
+
+          replace_once(
+              runtime,
+              """    private static final int REQUEST_CODE_PERMISSIONS                = 999;
+              private static final int REQUEST_CODE_DRAW_OVERLAYS              = 998;
+              private static final int REQUEST_CODE_ACCESS_BACKGROUND_LOCATION = 997;
+          """,
+              """    private static final int REQUEST_CODE_PERMISSIONS                = 999;
+              private static final int REQUEST_CODE_DRAW_OVERLAYS              = 998;
+              private static final int REQUEST_CODE_ACCESS_BACKGROUND_LOCATION = 997;
+              private static final int REQUEST_CODE_TRIP_PERMISSIONS           = 996;
+          """,
+              "RuntimePermissions request codes"
+          )
+
+          replace_once(
+              runtime,
+              """    public static boolean canAccessBackgroundLocation(Context context) {
+          """,
+              """    public static void requestTripPermissions(Activity activity, RuntimePermissionsListener listener) {
+                  if (Build.VERSION.SDK_INT < 23 || hasMandatoryPermissions(activity)) {
+                      listener.onPermissionsGranted();
+                      return;
+                  }
+
+                  activity.requestPermissions(
+                      new String[] {
+                          Manifest.permission.ACCESS_COARSE_LOCATION,
+                          Manifest.permission.ACCESS_FINE_LOCATION
+                      },
+                      REQUEST_CODE_TRIP_PERMISSIONS
+                  );
+              }
+
+              public static boolean canAccessBackgroundLocation(Context context) {
+          """,
+              "RuntimePermissions Trip insertion point"
+          )
+
+          replace_once(
+              runtime,
+              """            case REQUEST_CODE_ACCESS_BACKGROUND_LOCATION : {
+          """,
+              """            case REQUEST_CODE_TRIP_PERMISSIONS : {
+                      ArrayList<String> deniedPermissions = new ArrayList<>();
+
+                      for (String permission : MANDATORY_PERMISSIONS) {
+                          if (activity.checkCallingOrSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+                              deniedPermissions.add(permission);
+                          }
+                      }
+
+                      if (deniedPermissions.isEmpty()) {
+                          listener.onPermissionsGranted();
+                      }
+                      else {
+                          listener.onPermissionsDenied(
+                              deniedPermissions.toArray(new String[deniedPermissions.size()])
+                          );
+                      }
+                  }
+                  break;
+
+                  case REQUEST_CODE_ACCESS_BACKGROUND_LOCATION : {
+          """,
+              "RuntimePermissions Trip result handler"
+          )
+
+          requester = root / "ui/interfaces/RuntimePermissionsRequester.java"
+          replace_once(
+              requester,
+              """public interface RuntimePermissionsRequester {
+              public void requestRuntimePermissions();
+              public void requestRuntimePermissions(RuntimePermissionsListener listener);
+          }
+          """,
+              """public interface RuntimePermissionsRequester {
+              public void requestRuntimePermissions();
+              public void requestRuntimePermissions(RuntimePermissionsListener listener);
+              public void requestTripRuntimePermissions(RuntimePermissionsListener listener);
+          }
+          """,
+              "RuntimePermissionsRequester V7 interface"
+          )
+
+          main = root / "ui/AospMainActivity.java"
+          replace_once(
+              main,
+              """    public void requestRuntimePermissions(RuntimePermissionsListener listener) {
+                  pendingRuntimePermissionsListener = listener;
+                  RuntimePermissions.requestPermissions(/* activity */ AospMainActivity.this, /* listener */ AospMainActivity.this);
+              }
+
+              // =============================================================================================
+              // interface implementation: RuntimePermissions.RuntimePermissionsListener
+          """,
+              """    public void requestRuntimePermissions(RuntimePermissionsListener listener) {
+                  pendingRuntimePermissionsListener = listener;
+                  RuntimePermissions.requestPermissions(/* activity */ AospMainActivity.this, /* listener */ AospMainActivity.this);
+              }
+
+              public void requestTripRuntimePermissions(RuntimePermissionsListener listener) {
+                  pendingRuntimePermissionsListener = listener;
+                  RuntimePermissions.requestTripPermissions(
+                      /* activity */ AospMainActivity.this,
+                      /* listener */ AospMainActivity.this
+                  );
+              }
+
+              // =============================================================================================
+              // interface implementation: RuntimePermissions.RuntimePermissionsListener
+          """,
+              "AospMainActivity permission requester methods"
+          )
+
+          trip = root / "ui/TripSimulationActivity.java"
+
+          replace_once(
+              trip,
+              """import com.github.warren_bank.mock_location.service.LocationService;
+          """,
+              """import com.github.warren_bank.mock_location.service.LocationService;
+          import com.github.warren_bank.mock_location.security_model.RuntimePermissions;
+          import com.github.warren_bank.mock_location.ui.logic.TripStartPermissionPolicy;
+          """,
+              "TripSimulationActivity imports"
+          )
+
+          replace_once(
+              trip,
+              """    private void requestPermissions() {
+                  RuntimePermissionsRequester requester = (RuntimePermissionsRequester) getParent();
+                  requester.requestRuntimePermissions(TripSimulationActivity.this);
+              }
+          """,
+              """    private void requestPermissions() {
+                  boolean mandatoryLocationPermissionsGranted =
+                      RuntimePermissions.hasMandatoryPermissions(TripSimulationActivity.this);
+
+                  if (TripStartPermissionPolicy.shouldStartImmediately(mandatoryLocationPermissionsGranted)) {
+                      doStart();
+                      return;
+                  }
+
+                  RuntimePermissionsRequester requester = (RuntimePermissionsRequester) getParent();
+                  requester.requestTripRuntimePermissions(TripSimulationActivity.this);
+              }
+          """,
+              "TripSimulationActivity requestPermissions()"
+          )
+          PY
+
+      - name: GREEN - run full unit test task
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace | tee ../green-v8-tests.log
+
+      - name: Build GMS and AOSP V8 debug APKs
+        run: |
+          cd android-studio-project
+          ./gradlew \
+            :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug \
+            :Mock-my-GPS:assembleEnglishWithAospLocationProvidersWithBackupRestoreSAFDebug \
+            --stacktrace | tee ../build-v8.log
+
+      - name: Verify V8 integration is limited to Trip start
+        run: |
+          grep -q "REQUEST_CODE_TRIP_PERMISSIONS" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/security_model/RuntimePermissions.java
+          grep -q "requestTripPermissions" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/security_model/RuntimePermissions.java
+          grep -q "requestTripRuntimePermissions" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/AospMainActivity.java
+          grep -q "RuntimePermissions.hasMandatoryPermissions" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+          grep -q "TripStartPermissionPolicy.shouldStartImmediately" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+          grep -q "requestTripRuntimePermissions(TripSimulationActivity.this)" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+
+          grep -q "requestRuntimePermissions();" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/FixedPositionActivity.java
+
+          if git diff --name-only origin/follow-real-movement-v7 -- \
+              android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/motion \
+              android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper \
+              android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/LocationService.java \
+              | grep -q .; then
+            echo "Unexpected service or motion engine changes in V8."
+            exit 1
+          fi
+
+          echo "V8 one-tap Trip permission integration checks passed."
+
+      - name: Commit V8 implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-studio-project/Mock-my-GPS/src/main
+          git add android-studio-project/Mock-my-GPS/src/test
+          git commit -m "fix: start Trip immediately with dedicated permissions"
+
+      - name: Upload V8 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-follow-real-movement-v8-apks
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Push V8 implementation branch
+        run: |
+          git push --force-with-lease origin follow-real-movement-v8
+
+      - name: Upload V8 verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-real-movement-v8-verification
+          path: |
+            red-v8.log
+            green-v8-tests.log
+            build-v8.log
+          if-no-files-found: warn
