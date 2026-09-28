@@ -1,0 +1,574 @@
+name: Build Follow Real Movement V10 Long Trip Reliability
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout V9
+        uses: actions/checkout@v4
+        with:
+          ref: follow-real-movement-v9
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Create V10 branch
+        run: |
+          git fetch origin follow-real-movement-v9
+          git fetch origin follow-real-movement-v10:refs/remotes/origin/follow-real-movement-v10 || true
+          git checkout -B follow-real-movement-v10 origin/follow-real-movement-v9
+
+      - name: RED - add reliability tests
+        run: |
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/TripTimelineTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.recovery;
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+          public class TripTimelineTest {
+              @Test public void elapsedTimeDrivesProgress() {
+                  long start = 1000L;
+                  long duration = 6L * 60L * 60L * 1000L;
+                  assertEquals(1d/3d, TripTimeline.progress(start, duration, start + 2L*60L*60L*1000L), 0.000001d);
+                  assertEquals(5d/6d, TripTimeline.progress(start, duration, start + 5L*60L*60L*1000L), 0.000001d);
+              }
+              @Test public void remainingIsClamped() {
+                  assertEquals(2500L, TripTimeline.remainingMillis(1000L, 10000L, 8500L));
+                  assertEquals(0L, TripTimeline.remainingMillis(1000L, 10000L, 12000L));
+              }
+          }
+          EOF
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/LongTripPolicyTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.recovery;
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+          public class LongTripPolicyTest {
+              @Test public void tripAlwaysHoldsWakeLock() {
+                  assertTrue(LongTripPolicy.shouldHoldWakeLock(true, true, false));
+                  assertFalse(LongTripPolicy.shouldHoldWakeLock(true, false, false));
+                  assertTrue(LongTripPolicy.shouldHoldWakeLock(true, false, true));
+              }
+              @Test public void longGapForcesProviderRecovery() {
+                  assertFalse(LongTripPolicy.shouldForceProviderRecovery(9999L));
+                  assertTrue(LongTripPolicy.shouldForceProviderRecovery(10000L));
+              }
+          }
+          EOF
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshotV10Test.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.recovery;
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+          public class SessionSnapshotV10Test {
+              @Test public void wallClockEndSurvivesSerialization() {
+                  long now = 1700000000000L;
+                  long end = now + 3600000L;
+                  SessionSnapshot s = new SessionSnapshot(true,52.2d,21.0d,false,0.74d,true,SessionSnapshot.MODE_TRIP,52.3d,21.1d,3600000L,end);
+                  SessionSnapshot r = SessionSnapshot.fromJson(s.toJson());
+                  assertTrue(r.hasTripRoute());
+                  assertEquals(end, r.tripEndWallClockMs);
+                  assertEquals(3600000L, r.remainingTripMs(now));
+              }
+          }
+          EOF
+
+      - name: RED - verify tests fail
+        run: |
+          cd android-studio-project
+          chmod +x gradlew
+          set +e
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace > ../red-v10.log 2>&1
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "RED unexpectedly passed"; cat ../red-v10.log; exit 1
+          fi
+          grep -Eq "TripTimeline|LongTripPolicy|tripEndWallClockMs" ../red-v10.log
+
+      - name: GREEN - implement V10
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location")
+          recovery = root / "service/recovery"
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit("Could not locate " + label)
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          (recovery / "TripTimeline.java").write_text(r'''package com.github.warren_bank.mock_location.service.recovery;
+          public final class TripTimeline {
+              private TripTimeline() {}
+              public static long durationMillis(int seconds) {
+                  long safe = Math.max(1L, (long) seconds);
+                  return safe > Long.MAX_VALUE / 1000L ? Long.MAX_VALUE : safe * 1000L;
+              }
+              public static double progress(long start, long duration, long now) {
+                  if (duration <= 0L) return 1d;
+                  if (now <= start) return 0d;
+                  long elapsed = now - start;
+                  if (elapsed >= duration) return 1d;
+                  return Math.max(0d, Math.min(1d, (double) elapsed / (double) duration));
+              }
+              public static long remainingMillis(long start, long duration, long now) {
+                  if (duration <= 0L) return 0L;
+                  if (now <= start) return duration;
+                  long elapsed = now - start;
+                  return elapsed >= duration ? 0L : duration - elapsed;
+              }
+              public static long wallClockEnd(long nowWall, long remaining) {
+                  if (remaining <= 0L) return nowWall;
+                  return nowWall > Long.MAX_VALUE - remaining ? Long.MAX_VALUE : nowWall + remaining;
+              }
+          }
+          ''', encoding="utf-8")
+
+          (recovery / "LongTripPolicy.java").write_text(r'''package com.github.warren_bank.mock_location.service.recovery;
+          public final class LongTripPolicy {
+              public static final long FORCE_PROVIDER_RECOVERY_GAP_MS = 10000L;
+              public static final long HEARTBEAT_INTERVAL_MS = 10L * 60L * 1000L;
+              private LongTripPolicy() {}
+              public static boolean shouldHoldWakeLock(boolean running, boolean tripActive, boolean aggressive) {
+                  return running && (tripActive || aggressive);
+              }
+              public static boolean shouldForceProviderRecovery(long gapMs) {
+                  return gapMs >= FORCE_PROVIDER_RECOVERY_GAP_MS;
+              }
+          }
+          ''', encoding="utf-8")
+
+          (recovery / "SessionSnapshot.java").write_text(r'''package com.github.warren_bank.mock_location.service.recovery;
+          import com.google.gson.Gson;
+          public final class SessionSnapshot {
+              public static final double DEFAULT_STEP_LENGTH_METERS = 0.74d;
+              public static final String MODE_FIXED = "FIXED";
+              public static final String MODE_FOLLOW_REAL_MOVEMENT = "FOLLOW_REAL_MOVEMENT";
+              public static final String MODE_TRIP = "TRIP";
+              public final boolean active;
+              public final double latitude;
+              public final double longitude;
+              public final boolean followRealMovement;
+              public final double stepLengthMeters;
+              public final boolean aggressiveKeepAlive;
+              public final String mode;
+              public final double tripTargetLatitude;
+              public final double tripTargetLongitude;
+              public final long tripRemainingMs;
+              public final long tripEndWallClockMs;
+              public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive) {
+                  this(active,latitude,longitude,follow,step,keepAlive,follow ? MODE_FOLLOW_REAL_MOVEMENT : MODE_FIXED);
+              }
+              public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode) {
+                  this(active,latitude,longitude,follow,step,keepAlive,mode,0d,0d,0L,0L);
+              }
+              public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode,double targetLat,double targetLon,long remaining) {
+                  this(active,latitude,longitude,follow,step,keepAlive,mode,targetLat,targetLon,remaining,0L);
+              }
+              public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode,double targetLat,double targetLon,long remaining,long endWall) {
+                  boolean valid = valid(latitude, longitude);
+                  this.active = active && valid;
+                  this.latitude = valid ? latitude : 0d;
+                  this.longitude = valid ? longitude : 0d;
+                  this.followRealMovement = this.active && follow;
+                  this.stepLengthMeters = sanitizeStep(step);
+                  this.aggressiveKeepAlive = this.active && keepAlive;
+                  this.mode = sanitizeMode(this.active, this.followRealMovement, mode);
+                  boolean trip = this.active && MODE_TRIP.equals(this.mode) && valid(targetLat,targetLon) && (remaining > 0L || endWall > 0L);
+                  this.tripTargetLatitude = trip ? targetLat : 0d;
+                  this.tripTargetLongitude = trip ? targetLon : 0d;
+                  this.tripRemainingMs = trip ? Math.max(0L, remaining) : 0L;
+                  this.tripEndWallClockMs = trip ? Math.max(0L, endWall) : 0L;
+              }
+              public boolean hasTripRoute() {
+                  return active && MODE_TRIP.equals(mode) && valid(tripTargetLatitude,tripTargetLongitude) && (tripRemainingMs > 0L || tripEndWallClockMs > 0L);
+              }
+              public long remainingTripMs(long nowWall) {
+                  if (!hasTripRoute()) return 0L;
+                  return tripEndWallClockMs > 0L ? Math.max(0L, tripEndWallClockMs - nowWall) : Math.max(0L, tripRemainingMs);
+              }
+              public boolean hasResumableTrip() {
+                  return hasTripRoute() && remainingTripMs(System.currentTimeMillis()) > 0L;
+              }
+              public static SessionSnapshot inactive() { return new SessionSnapshot(false,0d,0d,false,DEFAULT_STEP_LENGTH_METERS,false,MODE_FIXED); }
+              public String toJson() { return new Gson().toJson(this); }
+              public static SessionSnapshot fromJson(String json) {
+                  if (json == null || json.trim().isEmpty()) return inactive();
+                  try {
+                      RawSnapshot r = new Gson().fromJson(json, RawSnapshot.class);
+                      if (r == null) return inactive();
+                      return new SessionSnapshot(r.active,r.latitude,r.longitude,r.followRealMovement,r.stepLengthMeters,r.aggressiveKeepAlive,r.mode,r.tripTargetLatitude,r.tripTargetLongitude,r.tripRemainingMs,r.tripEndWallClockMs);
+                  } catch (Exception e) { return inactive(); }
+              }
+              private static final class RawSnapshot {
+                  boolean active; double latitude; double longitude; boolean followRealMovement; double stepLengthMeters; boolean aggressiveKeepAlive; String mode; double tripTargetLatitude; double tripTargetLongitude; long tripRemainingMs; long tripEndWallClockMs;
+              }
+              private static String sanitizeMode(boolean active, boolean follow, String mode) {
+                  if (!active) return MODE_FIXED;
+                  if (MODE_TRIP.equals(mode)) return MODE_TRIP;
+                  return follow ? MODE_FOLLOW_REAL_MOVEMENT : MODE_FIXED;
+              }
+              private static double sanitizeStep(double v) {
+                  if (!finite(v) || v <= 0d) return DEFAULT_STEP_LENGTH_METERS;
+                  return Math.max(0.20d, Math.min(2.00d, v));
+              }
+              private static boolean valid(double lat, double lon) { return finite(lat) && finite(lon) && lat >= -90d && lat <= 90d && lon >= -180d && lon <= 180d; }
+              private static boolean finite(double v) { return !Double.isNaN(v) && !Double.isInfinite(v); }
+          }
+          ''', encoding="utf-8")
+
+          (root / "service/looper/LocationThread.java").write_text(r'''package com.github.warren_bank.mock_location.service.looper;
+          import com.github.warren_bank.mock_location.service.recovery.LongTripPolicy;
+          import android.content.Context;
+          import android.os.Handler;
+          import android.os.HandlerThread;
+          import android.os.Process;
+          import android.os.SystemClock;
+          public class LocationThread extends HandlerThread {
+              private Context mContext;
+              private LocationThreadManager mLocationThreadManager;
+              private int mTimeInterval;
+              private Handler mHandler;
+              private volatile long mLastRunElapsedMs = 0L;
+              public LocationThread(Context context, LocationThreadManager manager, int interval) {
+                  super("LocationThread", Process.THREAD_PRIORITY_MORE_FAVORABLE);
+                  mContext = context; mLocationThreadManager = manager; mTimeInterval = Math.max(50, interval);
+              }
+              @Override public synchronized void start() { super.start(); mHandler = new Handler(getLooper()); mHandler.post(mUpdateLocation); }
+              public void startThread() { MockLocationProviderManager.startMockingLocation(mContext); start(); }
+              public void stopThread() {
+                  MockLocationProviderManager.stopMockingLocation();
+                  if (mHandler != null) mHandler.removeCallbacksAndMessages(null);
+                  try { quit(); interrupt(); } catch (Exception e) {}
+                  mLocationThreadManager = null;
+              }
+              public void updateTimeInterval(int interval) { mTimeInterval = Math.max(50, interval); }
+              public void kickNow() {
+                  final Handler h = mHandler; if (h == null) return;
+                  h.post(new Runnable() { @Override public void run() { Handler current = mHandler; if (current == null) return; current.removeCallbacks(mUpdateLocation); mUpdateLocation.run(); }});
+              }
+              private final Runnable mUpdateLocation = new Runnable() {
+                  @Override public void run() {
+                      LocationThreadManager manager = mLocationThreadManager;
+                      long now = SystemClock.elapsedRealtime();
+                      long gap = (mLastRunElapsedMs > 0L && now >= mLastRunElapsedMs) ? now - mLastRunElapsedMs : 0L;
+                      mLastRunElapsedMs = now;
+                      try {
+                          if (manager != null) {
+                              MockLocationFix fix = manager.getUpdateFix();
+                              if (LongTripPolicy.shouldForceProviderRecovery(gap)) {
+                                  recoverProviders(manager, now, fix);
+                              } else {
+                                  boolean success = fix != null && MockLocationProviderManager.exec(fix);
+                                  manager.onInjectionResult(success, now);
+                                  if (manager.shouldRecover(now)) recoverProviders(manager, now, manager.getLastFixForRecovery());
+                              }
+                          }
+                      } catch (Exception e) {
+                          manager = mLocationThreadManager;
+                          if (manager != null) manager.onInjectionResult(false, SystemClock.elapsedRealtime());
+                      } finally {
+                          manager = mLocationThreadManager;
+                          if (manager != null && manager.shouldContinue() && mHandler != null) mHandler.postDelayed(this, mTimeInterval);
+                      }
+                  }
+              };
+              private void recoverProviders(LocationThreadManager manager, long now, MockLocationFix fix) {
+                  manager.markRecoveryStarted(now);
+                  boolean success = false;
+                  try {
+                      MockLocationProviderManager.stopMockingLocation();
+                      MockLocationProviderManager.startMockingLocation(mContext);
+                      success = fix != null && MockLocationProviderManager.exec(fix);
+                  } catch (Exception e) { success = false; }
+                  long done = SystemClock.elapsedRealtime();
+                  manager.onInjectionResult(success, done);
+                  if (success) manager.markRecoverySucceeded(done);
+              }
+              public Handler getHandler() { return mHandler; }
+          }
+          ''', encoding="utf-8")
+
+          manager = root / "service/looper/LocationThreadManager.java"
+          text = manager.read_text(encoding="utf-8")
+          if "service.recovery.TripTimeline" not in text:
+              text = text.replace("import com.github.warren_bank.mock_location.service.recovery.TripProgress;\n", "import com.github.warren_bank.mock_location.service.recovery.TripProgress;\nimport com.github.warren_bank.mock_location.service.recovery.TripTimeline;\n", 1)
+          marker = "    private int mTripPathCycles = TripPathGenerator.DEFAULT_CYCLES;\n"
+          if marker not in text: raise SystemExit("Trip path field marker missing")
+          if "mTripStartElapsedMs" not in text:
+              text = text.replace(marker, marker + "    private long mTripStartElapsedMs = 0L;\n    private long mTripDurationMs = 0L;\n", 1)
+
+          b = text.find("    private LocPoint getUpdateLocPointLocked() {")
+          e = text.find("\n    public boolean shouldContinue()", b)
+          if b < 0 or e < 0: raise SystemExit("update point anchors missing")
+          text = text[:b] + r'''    private LocPoint getUpdateLocPointLocked() {
+              if (!mFollowRealMovementEnabled && !mIsFlyMode && (mFixedCountRemaining != 0)) {
+                  if (mFixedCountRemaining < 0) return null;
+                  if (mFixedCountRemaining == 1) mFixedCountRemaining = -1; else mFixedCountRemaining--;
+              }
+              if (!mIsFlyMode) return new LocPoint(mCurrentLocPoint);
+              long now = SystemClock.elapsedRealtime();
+              double factor = TripTimeline.progress(mTripStartElapsedMs, mTripDurationMs, now);
+              if (factor >= 1d) {
+                  jumpToLocationLocked(mTargetLocPoint);
+                  mTripStartElapsedMs = 0L;
+                  mTripDurationMs = 0L;
+                  mFixedCountRemaining = mFollowRealMovementEnabled ? 0 : ((mTripHoldDestination) ? mFixedCount : -1);
+                  return new LocPoint(mCurrentLocPoint);
+              }
+              LocPoint shaped = TripPathGenerator.getPoint(mOriginLocPoint,mTargetLocPoint,mTripPathType,factor,mTripPathAmplitudeMeters,mTripPathCycles);
+              if (shaped != null) mCurrentLocPoint = shaped;
+              return new LocPoint(mCurrentLocPoint);
+          }
+          ''' + text[e:]
+
+          b = text.find("    public boolean shouldContinue() {")
+          e = text.find("\n    public void jumpToLocation(", b)
+          if b < 0 or e < 0: raise SystemExit("shouldContinue anchors missing")
+          text = text[:b] + r'''    public boolean shouldContinue() {
+              boolean done;
+              synchronized (mLock) {
+                  if (!mIsStarted) return false;
+                  if (mFollowRealMovementEnabled) return true;
+                  done = !mIsFlyMode && (mFixedCountRemaining < 0);
+              }
+              if (done) stop();
+              return !done;
+          }
+          ''' + text[e:]
+
+          b = text.find("    public void flyToLocation(")
+          e = text.find("\n    public boolean isFlyMode()", b)
+          if b < 0 or e < 0: raise SystemExit("flyToLocation anchors missing")
+          text = text[:b] + r'''    public void flyToLocation(LocPoint location, int seconds) {
+              flyToLocation(location, seconds, TripPathGenerator.TYPE_STRAIGHT, TripPathGenerator.DEFAULT_AMPLITUDE_METERS, TripPathGenerator.DEFAULT_CYCLES);
+          }
+          public void flyToLocation(LocPoint location, int seconds, int type, double amplitude, int cycles) {
+              if (location == null) return;
+              synchronized (mLock) {
+                  if (mIsStarted && mFixedJoystickEnabled) hideJoyStick();
+                  mOriginLocPoint = new LocPoint(mCurrentLocPoint);
+                  mTargetLocPoint = new LocPoint(location);
+                  mTripPathType = TripPathGenerator.sanitizeType(type);
+                  mTripPathAmplitudeMeters = TripPathGenerator.sanitizeAmplitude(amplitude);
+                  mTripPathCycles = TripPathGenerator.sanitizeCycles(cycles);
+                  mTripStartElapsedMs = SystemClock.elapsedRealtime();
+                  mTripDurationMs = TripTimeline.durationMillis(seconds);
+                  mIsFlyMode = true;
+                  mFlyTimeIndex = 0;
+                  mFlyTime = 0;
+                  mCurrentSpeedMps = 0f;
+              }
+              updateMotionAndJoystickState();
+              persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+          }
+          ''' + text[e:]
+
+          old = '''    public void stopFlyMode() {\n        synchronized (mLock) {\n            mIsFlyMode = false;\n            mCurrentSpeedMps = 0f;\n        }\n    }\n'''
+          new = '''    public void stopFlyMode() {\n        synchronized (mLock) {\n            mIsFlyMode = false;\n            mTripStartElapsedMs = 0L;\n            mTripDurationMs = 0L;\n            mCurrentSpeedMps = 0f;\n        }\n    }\n\n    public void ensureTripLoopAwake() {\n        LocationThread thread;\n        boolean start = false;\n        synchronized (mLock) {\n            if (!mIsStarted || !mIsFlyMode || mContext == null) return;\n            thread = mLocationThread;\n            if (thread == null || !thread.isAlive()) {\n                thread = new LocationThread(mContext, this, mTimeInterval);\n                mLocationThread = thread;\n                start = true;\n            }\n        }\n        if (start) thread.startThread(); else thread.kickNow();\n    }\n'''
+          if old not in text: raise SystemExit("stopFlyMode block missing")
+          text = text.replace(old, new, 1)
+
+          b = text.find("    private void persistSessionMaybe(long nowMs, boolean force) {")
+          e = text.find("\n    private void updateStationarySpeedLocked", b)
+          if b < 0 or e < 0: raise SystemExit("persist anchors missing")
+          text = text[:b] + r'''    private void persistSessionMaybe(long nowMs, boolean force) {
+              if (mContext == null) return;
+              SessionSnapshot snapshot;
+              synchronized (mLock) {
+                  if (!mIsStarted || mCurrentLocPoint == null) return;
+                  if (!force && mLastSessionPersistMs > 0L && (nowMs - mLastSessionPersistMs) < SESSION_PERSIST_INTERVAL_MS) return;
+                  mLastSessionPersistMs = nowMs;
+                  String mode = mIsFlyMode ? SessionSnapshot.MODE_TRIP : (mFollowRealMovementEnabled ? SessionSnapshot.MODE_FOLLOW_REAL_MOVEMENT : SessionSnapshot.MODE_FIXED);
+                  double targetLat = 0d, targetLon = 0d;
+                  long remaining = 0L, endWall = 0L;
+                  if (mIsFlyMode && mTargetLocPoint != null) {
+                      targetLat = mTargetLocPoint.getLatitude();
+                      targetLon = mTargetLocPoint.getLongitude();
+                      remaining = TripTimeline.remainingMillis(mTripStartElapsedMs, mTripDurationMs, nowMs);
+                      endWall = TripTimeline.wallClockEnd(System.currentTimeMillis(), remaining);
+                  }
+                  snapshot = new SessionSnapshot(true,mCurrentLocPoint.getLatitude(),mCurrentLocPoint.getLongitude(),mFollowRealMovementEnabled,mStepLengthMeters,mAggressiveKeepAlive,mode,targetLat,targetLon,remaining,endWall);
+              }
+              MockSessionState.save(mContext, snapshot);
+          }
+          ''' + text[e:]
+
+          b = text.find("    private void updateFlyTime(int new_time_interval) {")
+          e = text.rfind("\n}")
+          if b < 0 or e < 0: raise SystemExit("updateFlyTime anchors missing")
+          text = text[:b] + '''    private void updateFlyTime(int new_time_interval) {\n        // V10: Trip duration is independent of injection interval.\n    }\n''' + text[e:]
+          manager.write_text(text, encoding="utf-8")
+
+          service = root / "service/LocationService.java"
+          text = service.read_text(encoding="utf-8")
+          if "service.recovery.LongTripPolicy" not in text:
+              text = text.replace("import com.github.warren_bank.mock_location.service.recovery.TripProgress;\n", "import com.github.warren_bank.mock_location.service.recovery.TripProgress;\nimport com.github.warren_bank.mock_location.service.recovery.LongTripPolicy;\n", 1)
+          if "import android.app.AlarmManager;" not in text:
+              text = text.replace("import android.app.Notification;\n", "import android.app.AlarmManager;\nimport android.app.Notification;\n", 1)
+          if "import android.os.SystemClock;" not in text:
+              text = text.replace("import android.os.PowerManager;\n", "import android.os.PowerManager;\nimport android.os.SystemClock;\n", 1)
+          marker = '    private final static String ACTION_PREFS          = "SHARED_PREFS_CHANGE";\n'
+          if marker not in text: raise SystemExit("ACTION_PREFS marker missing")
+          if "ACTION_HEARTBEAT" not in text:
+              text = text.replace(marker, marker + '    private final static String ACTION_HEARTBEAT      = "LONG_TRIP_HEARTBEAT";\n    private final static int HEARTBEAT_REQUEST_CODE   = 7042;\n', 1)
+
+          old = '''            case ACTION_START: {\n                LocPoint origin = processIntentExtras(intent);\n                if (origin != null) {\n                    running = true;\n                    LTM.start(origin);\n                    refreshWakeLock();\n                }\n                break;\n            }\n'''
+          new = '''            case ACTION_START: {\n                LocPoint origin = processIntentExtras(intent);\n                if (origin != null) {\n                    running = true;\n                    LTM.start(origin);\n                    refreshWakeLock();\n                    if (LTM.isFlyMode()) scheduleTripHeartbeat(); else cancelTripHeartbeat();\n                }\n                break;\n            }\n'''
+          if old not in text: raise SystemExit("ACTION_START block missing")
+          text = text.replace(old, new, 1)
+
+          old = '''            case ACTION_STOP: {\n                running = false;\n                MockSessionState.clear(LocationService.this);\n                releaseWakeLock();\n                LTM.stop();\n                stopSelf();\n                break;\n            }\n'''
+          new = '''            case ACTION_STOP: {\n                running = false;\n                cancelTripHeartbeat();\n                MockSessionState.clear(LocationService.this);\n                releaseWakeLock();\n                LTM.stop();\n                stopSelf();\n                break;\n            }\n'''
+          if old not in text: raise SystemExit("ACTION_STOP block missing")
+          text = text.replace(old, new, 1)
+
+          old = '''            case ACTION_PREFS: {\n                LTM.onSharedPrefsChange((short) 0);\n                refreshWakeLock();\n                break;\n            }\n'''
+          new = '''            case ACTION_PREFS: {\n                LTM.onSharedPrefsChange((short) 0);\n                refreshWakeLock();\n                if (LTM.isFlyMode()) scheduleTripHeartbeat(); else cancelTripHeartbeat();\n                break;\n            }\n\n            case ACTION_HEARTBEAT: {\n                if (!running || LTM == null || !LTM.isStarted()) restoreActiveSessionIfPresent();\n                if (running && LTM != null && LTM.isFlyMode()) {\n                    LTM.ensureTripLoopAwake();\n                    refreshWakeLock();\n                    scheduleTripHeartbeat();\n                } else {\n                    cancelTripHeartbeat();\n                }\n                break;\n            }\n'''
+          if old not in text: raise SystemExit("ACTION_PREFS block missing")
+          text = text.replace(old, new, 1)
+
+          b = text.find("    private void restoreActiveSessionIfPresent() {")
+          e = text.find("\n    private LocPoint processIntentExtras", b)
+          if b < 0 or e < 0: raise SystemExit("restore anchors missing")
+          text = text[:b] + r'''    private void restoreActiveSessionIfPresent() {
+              if (running || (LTM != null && LTM.isStarted())) return;
+              SessionSnapshot snapshot = MockSessionState.load(LocationService.this);
+              if (snapshot == null || !snapshot.active) { cancelTripHeartbeat(); stopSelf(); return; }
+              EnhancedPrefs.restoreSessionValues(LocationService.this,snapshot.followRealMovement,snapshot.stepLengthMeters,snapshot.aggressiveKeepAlive);
+              LTM.onSharedPrefsChange((short) 0);
+              running = true;
+              LTM.start(new LocPoint(snapshot.latitude, snapshot.longitude));
+              if (snapshot.hasTripRoute()) {
+                  long remaining = snapshot.remainingTripMs(System.currentTimeMillis());
+                  LocPoint target = new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude);
+                  if (remaining > 0L) {
+                      int seconds = TripProgress.secondsForRestore(remaining);
+                      LTM.flyToLocation(target,seconds,TripPathPrefs.getType(LocationService.this),TripPathPrefs.getAmplitude(LocationService.this),TripPathPrefs.getCycles(LocationService.this));
+                  } else {
+                      LTM.jumpToLocation(target);
+                  }
+              }
+              refreshWakeLock();
+              if (LTM.isFlyMode()) scheduleTripHeartbeat(); else cancelTripHeartbeat();
+          }
+          ''' + text[e:]
+
+          b = text.find("    private void refreshWakeLock() {")
+          e = text.find("\n    private void acquireWakeLock()", b)
+          if b < 0 or e < 0: raise SystemExit("wake lock anchors missing")
+          text = text[:b] + r'''    private void refreshWakeLock() {
+              boolean tripActive = running && LTM != null && LTM.isFlyMode();
+              boolean hold = LongTripPolicy.shouldHoldWakeLock(running,tripActive,EnhancedPrefs.getAggressiveKeepAlive(LocationService.this));
+              if (hold) acquireWakeLock(); else releaseWakeLock();
+          }
+
+          private PendingIntent getPendingIntent_TripHeartbeat() {
+              Intent intent = new Intent(LocationService.this, LocationService.class);
+              intent.setAction(ACTION_HEARTBEAT);
+              int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+              if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+              if (Build.VERSION.SDK_INT >= 26) return PendingIntent.getForegroundService(LocationService.this,HEARTBEAT_REQUEST_CODE,intent,flags);
+              return PendingIntent.getService(LocationService.this,HEARTBEAT_REQUEST_CODE,intent,flags);
+          }
+
+          private void scheduleTripHeartbeat() {
+              try {
+                  AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                  if (am == null) return;
+                  PendingIntent pi = getPendingIntent_TripHeartbeat();
+                  long at = SystemClock.elapsedRealtime() + LongTripPolicy.HEARTBEAT_INTERVAL_MS;
+                  am.cancel(pi);
+                  if (Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,at,pi);
+                  else am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,at,pi);
+              } catch (Exception e) {}
+          }
+
+          private void cancelTripHeartbeat() {
+              try {
+                  AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                  if (am != null) am.cancel(getPendingIntent_TripHeartbeat());
+              } catch (Exception e) {}
+          }
+          ''' + text[e:]
+
+          old = '''    private static Intent doAction(Context context, Intent intent, String action, boolean broadcast) {\n        intent.setAction(action);\n\n        if (broadcast)\n            context.startService(intent);\n\n        return intent;\n    }\n'''
+          new = '''    private static Intent doAction(Context context, Intent intent, String action, boolean broadcast) {\n        intent.setAction(action);\n        if (broadcast) {\n            if (Build.VERSION.SDK_INT >= 26 && ACTION_START.equals(action)) context.startForegroundService(intent);\n            else context.startService(intent);\n        }\n        return intent;\n    }\n'''
+          if old not in text: raise SystemExit("doAction block missing")
+          text = text.replace(old, new, 1)
+          service.write_text(text, encoding="utf-8")
+          PY
+
+      - name: GREEN - run full unit tests
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace | tee ../green-v10-tests.log
+
+      - name: Build V10 GMS and AOSP APKs
+        run: |
+          cd android-studio-project
+          ./gradlew \
+            :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug \
+            :Mock-my-GPS:assembleEnglishWithAospLocationProvidersWithBackupRestoreSAFDebug \
+            --stacktrace | tee ../build-v10.log
+
+      - name: Verify V10 integration
+        run: |
+          grep -q "TripTimeline.progress" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java
+          grep -q "TripTimeline.remainingMillis" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java
+          grep -q "ensureTripLoopAwake" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java
+          grep -q "shouldForceProviderRecovery" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThread.java
+          grep -q "ACTION_HEARTBEAT" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/LocationService.java
+          grep -q "setAndAllowWhileIdle" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/LocationService.java
+          grep -q "tripEndWallClockMs" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/recovery/SessionSnapshot.java
+          grep -q "TripStartPermissionPolicy.shouldStartImmediately" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+          grep -q "TYPE_COUNT = 30" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/trip/TripPathGenerator.java
+          echo "V10 verification passed"
+
+      - name: Commit V10
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-studio-project/Mock-my-GPS/src/main android-studio-project/Mock-my-GPS/src/test
+          git commit -m "fix: harden long Trips against background suspension"
+
+      - name: Upload V10 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-follow-real-movement-v10-long-trip-apks
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Push V10 branch
+        run: git push --force-with-lease origin follow-real-movement-v10
+
+      - name: Upload V10 verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-real-movement-v10-long-trip-verification
+          path: |
+            red-v10.log
+            green-v10-tests.log
+            build-v10.log
+          if-no-files-found: warn
