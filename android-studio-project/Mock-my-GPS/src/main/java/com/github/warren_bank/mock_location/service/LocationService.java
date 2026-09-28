@@ -7,10 +7,12 @@ import com.github.warren_bank.mock_location.service.looper.LocationThreadManager
 import com.github.warren_bank.mock_location.service.recovery.MockSessionState;
 import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;
 import com.github.warren_bank.mock_location.service.recovery.TripProgress;
+import com.github.warren_bank.mock_location.service.recovery.LongTripPolicy;
 import com.github.warren_bank.mock_location.service.trip.TripPathGenerator;
 import com.github.warren_bank.mock_location.service.trip.TripPathPrefs;
 import com.github.warren_bank.mock_location.ui.MainActivity;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -22,6 +24,7 @@ import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.widget.RemoteViews;
 
 public class LocationService extends Service {
@@ -29,6 +32,8 @@ public class LocationService extends Service {
     private final static String ACTION_START          = "START";
     private final static String ACTION_STOP           = "STOP";
     private final static String ACTION_PREFS          = "SHARED_PREFS_CHANGE";
+    private final static String ACTION_HEARTBEAT      = "LONG_TRIP_HEARTBEAT";
+    private final static int HEARTBEAT_REQUEST_CODE   = 7042;
     private final static String EXTRA_ORIGIN_LAT      = "ORIGIN_LAT";
     private final static String EXTRA_ORIGIN_LON      = "ORIGIN_LON";
     private final static String EXTRA_DESTINATION_LAT = "DESTINATION_LAT";
@@ -232,12 +237,14 @@ public class LocationService extends Service {
                     running = true;
                     LTM.start(origin);
                     refreshWakeLock();
+                    if (LTM.isFlyMode()) scheduleTripHeartbeat(); else cancelTripHeartbeat();
                 }
                 break;
             }
 
             case ACTION_STOP: {
                 running = false;
+                cancelTripHeartbeat();
                 MockSessionState.clear(LocationService.this);
                 releaseWakeLock();
                 LTM.stop();
@@ -248,48 +255,45 @@ public class LocationService extends Service {
             case ACTION_PREFS: {
                 LTM.onSharedPrefsChange((short) 0);
                 refreshWakeLock();
+                if (LTM.isFlyMode()) scheduleTripHeartbeat(); else cancelTripHeartbeat();
+                break;
+            }
+
+            case ACTION_HEARTBEAT: {
+                if (!running || LTM == null || !LTM.isStarted()) restoreActiveSessionIfPresent();
+                if (running && LTM != null && LTM.isFlyMode()) {
+                    LTM.ensureTripLoopAwake();
+                    refreshWakeLock();
+                    scheduleTripHeartbeat();
+                } else {
+                    cancelTripHeartbeat();
+                }
                 break;
             }
         }
     }
 
     private void restoreActiveSessionIfPresent() {
-        if (running || (LTM != null && LTM.isStarted()))
-            return;
-
-        SessionSnapshot snapshot = MockSessionState.load(LocationService.this);
-        if (snapshot == null || !snapshot.active) {
-            stopSelf();
-            return;
+    if (running || (LTM != null && LTM.isStarted())) return;
+    SessionSnapshot snapshot = MockSessionState.load(LocationService.this);
+    if (snapshot == null || !snapshot.active) { cancelTripHeartbeat(); stopSelf(); return; }
+    EnhancedPrefs.restoreSessionValues(LocationService.this,snapshot.followRealMovement,snapshot.stepLengthMeters,snapshot.aggressiveKeepAlive);
+    LTM.onSharedPrefsChange((short) 0);
+    running = true;
+    LTM.start(new LocPoint(snapshot.latitude, snapshot.longitude));
+    if (snapshot.hasTripRoute()) {
+        long remaining = snapshot.remainingTripMs(System.currentTimeMillis());
+        LocPoint target = new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude);
+        if (remaining > 0L) {
+            int seconds = TripProgress.secondsForRestore(remaining);
+            LTM.flyToLocation(target,seconds,TripPathPrefs.getType(LocationService.this),TripPathPrefs.getAmplitude(LocationService.this),TripPathPrefs.getCycles(LocationService.this));
+        } else {
+            LTM.jumpToLocation(target);
         }
-
-        EnhancedPrefs.restoreSessionValues(
-            LocationService.this,
-            snapshot.followRealMovement,
-            snapshot.stepLengthMeters,
-            snapshot.aggressiveKeepAlive
-        );
-
-        LTM.onSharedPrefsChange((short) 0);
-
-        running = true;
-        LTM.start(new LocPoint(snapshot.latitude, snapshot.longitude));
-
-        if (snapshot.hasResumableTrip()) {
-            int remainingSeconds = TripProgress.secondsForRestore(snapshot.tripRemainingMs);
-            if (remainingSeconds > 0) {
-                LTM.flyToLocation(
-                    new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude),
-                    remainingSeconds,
-                    TripPathPrefs.getType(LocationService.this),
-                    TripPathPrefs.getAmplitude(LocationService.this),
-                    TripPathPrefs.getCycles(LocationService.this)
-                );
-            }
-        }
-
-        refreshWakeLock();
     }
+    refreshWakeLock();
+    if (LTM.isFlyMode()) scheduleTripHeartbeat(); else cancelTripHeartbeat();
+}
 
     private LocPoint processIntentExtras(Intent intent) {
         double origin_lat      = intent.getDoubleExtra(EXTRA_ORIGIN_LAT,      2000.0);
@@ -331,15 +335,38 @@ public class LocationService extends Service {
     }
 
     private void refreshWakeLock() {
-        boolean shouldHold = running && EnhancedPrefs.getAggressiveKeepAlive(LocationService.this);
+    boolean tripActive = running && LTM != null && LTM.isFlyMode();
+    boolean hold = LongTripPolicy.shouldHoldWakeLock(running,tripActive,EnhancedPrefs.getAggressiveKeepAlive(LocationService.this));
+    if (hold) acquireWakeLock(); else releaseWakeLock();
+}
 
-        if (shouldHold) {
-            acquireWakeLock();
-        }
-        else {
-            releaseWakeLock();
-        }
-    }
+private PendingIntent getPendingIntent_TripHeartbeat() {
+    Intent intent = new Intent(LocationService.this, LocationService.class);
+    intent.setAction(ACTION_HEARTBEAT);
+    int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+    if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+    if (Build.VERSION.SDK_INT >= 26) return PendingIntent.getForegroundService(LocationService.this,HEARTBEAT_REQUEST_CODE,intent,flags);
+    return PendingIntent.getService(LocationService.this,HEARTBEAT_REQUEST_CODE,intent,flags);
+}
+
+private void scheduleTripHeartbeat() {
+    try {
+        AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+        if (am == null) return;
+        PendingIntent pi = getPendingIntent_TripHeartbeat();
+        long at = SystemClock.elapsedRealtime() + LongTripPolicy.HEARTBEAT_INTERVAL_MS;
+        am.cancel(pi);
+        if (Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,at,pi);
+        else am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,at,pi);
+    } catch (Exception e) {}
+}
+
+private void cancelTripHeartbeat() {
+    try {
+        AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+        if (am != null) am.cancel(getPendingIntent_TripHeartbeat());
+    } catch (Exception e) {}
+}
 
     private void acquireWakeLock() {
         if (wakeLock != null && wakeLock.isHeld())
@@ -468,10 +495,10 @@ private static void addIntentExtras(
 
     private static Intent doAction(Context context, Intent intent, String action, boolean broadcast) {
         intent.setAction(action);
-
-        if (broadcast)
-            context.startService(intent);
-
+        if (broadcast) {
+            if (Build.VERSION.SDK_INT >= 26 && ACTION_START.equals(action)) context.startForegroundService(intent);
+            else context.startService(intent);
+        }
         return intent;
     }
 

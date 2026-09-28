@@ -1,14 +1,10 @@
 package com.github.warren_bank.mock_location.service.recovery;
-
 import com.google.gson.Gson;
-
 public final class SessionSnapshot {
     public static final double DEFAULT_STEP_LENGTH_METERS = 0.74d;
-
     public static final String MODE_FIXED = "FIXED";
     public static final String MODE_FOLLOW_REAL_MOVEMENT = "FOLLOW_REAL_MOVEMENT";
     public static final String MODE_TRIP = "TRIP";
-
     public final boolean active;
     public final double latitude;
     public final double longitude;
@@ -19,165 +15,63 @@ public final class SessionSnapshot {
     public final double tripTargetLatitude;
     public final double tripTargetLongitude;
     public final long tripRemainingMs;
-
-    public SessionSnapshot(
-        boolean active,
-        double latitude,
-        double longitude,
-        boolean followRealMovement,
-        double stepLengthMeters,
-        boolean aggressiveKeepAlive
-    ) {
-        this(
-            active,
-            latitude,
-            longitude,
-            followRealMovement,
-            stepLengthMeters,
-            aggressiveKeepAlive,
-            followRealMovement ? MODE_FOLLOW_REAL_MOVEMENT : MODE_FIXED
-        );
+    public final long tripEndWallClockMs;
+    public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive) {
+        this(active,latitude,longitude,follow,step,keepAlive,follow ? MODE_FOLLOW_REAL_MOVEMENT : MODE_FIXED);
     }
-
-    public SessionSnapshot(
-boolean active,
-double latitude,
-double longitude,
-boolean followRealMovement,
-double stepLengthMeters,
-boolean aggressiveKeepAlive,
-String mode
-) {
-this(
-  active,
-  latitude,
-  longitude,
-  followRealMovement,
-  stepLengthMeters,
-  aggressiveKeepAlive,
-  mode,
-  0d,
-  0d,
-  0L
-);
-}
-
-public SessionSnapshot(
-boolean active,
-double latitude,
-double longitude,
-boolean followRealMovement,
-double stepLengthMeters,
-boolean aggressiveKeepAlive,
-String mode,
-double tripTargetLatitude,
-double tripTargetLongitude,
-long tripRemainingMs
-) {
-boolean validCoordinates = isValidCoordinates(latitude, longitude);
-
-this.active = active && validCoordinates;
-this.latitude = validCoordinates ? latitude : 0d;
-this.longitude = validCoordinates ? longitude : 0d;
-this.followRealMovement = this.active && followRealMovement;
-this.stepLengthMeters = sanitizeStepLength(stepLengthMeters);
-this.aggressiveKeepAlive = this.active && aggressiveKeepAlive;
-this.mode = sanitizeMode(this.active, this.followRealMovement, mode);
-
-boolean validTripRoute =
-     this.active
-  && MODE_TRIP.equals(this.mode)
-  && isValidCoordinates(tripTargetLatitude, tripTargetLongitude)
-  && tripRemainingMs > 0L;
-
-this.tripTargetLatitude = validTripRoute ? tripTargetLatitude : 0d;
-this.tripTargetLongitude = validTripRoute ? tripTargetLongitude : 0d;
-this.tripRemainingMs = validTripRoute ? tripRemainingMs : 0L;
-}
-
-public boolean hasResumableTrip() {
-return active
-  && MODE_TRIP.equals(mode)
-  && tripRemainingMs > 0L
-  && isValidCoordinates(tripTargetLatitude, tripTargetLongitude);
-}
-
-    public static SessionSnapshot inactive() {
-        return new SessionSnapshot(
-            false,
-            0d,
-            0d,
-            false,
-            DEFAULT_STEP_LENGTH_METERS,
-            false,
-            MODE_FIXED
-        );
+    public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode) {
+        this(active,latitude,longitude,follow,step,keepAlive,mode,0d,0d,0L,0L);
     }
-
-    public String toJson() {
-        return new Gson().toJson(this);
+    public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode,double targetLat,double targetLon,long remaining) {
+        this(active,latitude,longitude,follow,step,keepAlive,mode,targetLat,targetLon,remaining,0L);
     }
-
+    public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode,double targetLat,double targetLon,long remaining,long endWall) {
+        boolean valid = valid(latitude, longitude);
+        this.active = active && valid;
+        this.latitude = valid ? latitude : 0d;
+        this.longitude = valid ? longitude : 0d;
+        this.followRealMovement = this.active && follow;
+        this.stepLengthMeters = sanitizeStep(step);
+        this.aggressiveKeepAlive = this.active && keepAlive;
+        this.mode = sanitizeMode(this.active, this.followRealMovement, mode);
+        boolean trip = this.active && MODE_TRIP.equals(this.mode) && valid(targetLat,targetLon) && (remaining > 0L || endWall > 0L);
+        this.tripTargetLatitude = trip ? targetLat : 0d;
+        this.tripTargetLongitude = trip ? targetLon : 0d;
+        this.tripRemainingMs = trip ? Math.max(0L, remaining) : 0L;
+        this.tripEndWallClockMs = trip ? Math.max(0L, endWall) : 0L;
+    }
+    public boolean hasTripRoute() {
+        return active && MODE_TRIP.equals(mode) && valid(tripTargetLatitude,tripTargetLongitude) && (tripRemainingMs > 0L || tripEndWallClockMs > 0L);
+    }
+    public long remainingTripMs(long nowWall) {
+        if (!hasTripRoute()) return 0L;
+        return tripEndWallClockMs > 0L ? Math.max(0L, tripEndWallClockMs - nowWall) : Math.max(0L, tripRemainingMs);
+    }
+    public boolean hasResumableTrip() {
+        return hasTripRoute() && remainingTripMs(System.currentTimeMillis()) > 0L;
+    }
+    public static SessionSnapshot inactive() { return new SessionSnapshot(false,0d,0d,false,DEFAULT_STEP_LENGTH_METERS,false,MODE_FIXED); }
+    public String toJson() { return new Gson().toJson(this); }
     public static SessionSnapshot fromJson(String json) {
         if (json == null || json.trim().isEmpty()) return inactive();
-
         try {
-            RawSnapshot raw = new Gson().fromJson(json, RawSnapshot.class);
-            if (raw == null) return inactive();
-
-            return new SessionSnapshot(
-                raw.active,
-                raw.latitude,
-                raw.longitude,
-                raw.followRealMovement,
-                raw.stepLengthMeters,
-                raw.aggressiveKeepAlive,
-                raw.mode,
-                raw.tripTargetLatitude,
-                raw.tripTargetLongitude,
-                raw.tripRemainingMs
-            );
-        }
-        catch (Exception e) {
-            return inactive();
-        }
+            RawSnapshot r = new Gson().fromJson(json, RawSnapshot.class);
+            if (r == null) return inactive();
+            return new SessionSnapshot(r.active,r.latitude,r.longitude,r.followRealMovement,r.stepLengthMeters,r.aggressiveKeepAlive,r.mode,r.tripTargetLatitude,r.tripTargetLongitude,r.tripRemainingMs,r.tripEndWallClockMs);
+        } catch (Exception e) { return inactive(); }
     }
-
     private static final class RawSnapshot {
-        boolean active;
-        double latitude;
-        double longitude;
-        boolean followRealMovement;
-        double stepLengthMeters;
-        boolean aggressiveKeepAlive;
-        String mode;
-        double tripTargetLatitude;
-        double tripTargetLongitude;
-        long tripRemainingMs;
+        boolean active; double latitude; double longitude; boolean followRealMovement; double stepLengthMeters; boolean aggressiveKeepAlive; String mode; double tripTargetLatitude; double tripTargetLongitude; long tripRemainingMs; long tripEndWallClockMs;
     }
-
-    private static String sanitizeMode(boolean active, boolean followRealMovement, String mode) {
+    private static String sanitizeMode(boolean active, boolean follow, String mode) {
         if (!active) return MODE_FIXED;
         if (MODE_TRIP.equals(mode)) return MODE_TRIP;
-        if (followRealMovement) return MODE_FOLLOW_REAL_MOVEMENT;
-        return MODE_FIXED;
+        return follow ? MODE_FOLLOW_REAL_MOVEMENT : MODE_FIXED;
     }
-
-    private static double sanitizeStepLength(double value) {
-        if (!isFinite(value) || value <= 0d) return DEFAULT_STEP_LENGTH_METERS;
-        return Math.max(0.20d, Math.min(2.00d, value));
+    private static double sanitizeStep(double v) {
+        if (!finite(v) || v <= 0d) return DEFAULT_STEP_LENGTH_METERS;
+        return Math.max(0.20d, Math.min(2.00d, v));
     }
-
-    private static boolean isValidCoordinates(double latitude, double longitude) {
-        return isFinite(latitude)
-            && isFinite(longitude)
-            && latitude >= -90d
-            && latitude <= 90d
-            && longitude >= -180d
-            && longitude <= 180d;
-    }
-
-    private static boolean isFinite(double value) {
-        return !Double.isNaN(value) && !Double.isInfinite(value);
-    }
+    private static boolean valid(double lat, double lon) { return finite(lat) && finite(lon) && lat >= -90d && lat <= 90d && lon >= -180d && lon <= 180d; }
+    private static boolean finite(double v) { return !Double.isNaN(v) && !Double.isInfinite(v); }
 }

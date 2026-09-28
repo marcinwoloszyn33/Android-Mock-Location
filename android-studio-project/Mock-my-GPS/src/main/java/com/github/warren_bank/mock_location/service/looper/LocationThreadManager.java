@@ -14,6 +14,7 @@ import com.github.warren_bank.mock_location.service.recovery.MockSessionState;
 import com.github.warren_bank.mock_location.service.recovery.MockWatchdog;
 import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;
 import com.github.warren_bank.mock_location.service.recovery.TripProgress;
+import com.github.warren_bank.mock_location.service.recovery.TripTimeline;
 import com.github.warren_bank.mock_location.service.trip.TripPathGenerator;
 import com.github.warren_bank.mock_location.ui.components.JoyStickView;
 
@@ -40,6 +41,8 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     private int mTripPathType = TripPathGenerator.TYPE_STRAIGHT;
     private double mTripPathAmplitudeMeters = TripPathGenerator.DEFAULT_AMPLITUDE_METERS;
     private int mTripPathCycles = TripPathGenerator.DEFAULT_CYCLES;
+    private long mTripStartElapsedMs = 0L;
+    private long mTripDurationMs = 0L;
 
     private int mTimeInterval;
     private int mFixedCount;
@@ -195,66 +198,35 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     }
 
     private LocPoint getUpdateLocPointLocked() {
-        if (!mFollowRealMovementEnabled && !mIsFlyMode && (mFixedCountRemaining != 0)) {
-            if (mFixedCountRemaining < 0) {
-                return null;
-            }
-            if (mFixedCountRemaining == 1) {
-                mFixedCountRemaining = -1;
-            }
-            else {
-                mFixedCountRemaining--;
-            }
-        }
-
-        if (!mIsFlyMode) {
-            return new LocPoint(mCurrentLocPoint);
-        }
-
-        if (mFlyTimeIndex >= mFlyTime) {
-            jumpToLocationLocked(mTargetLocPoint);
-            mFixedCountRemaining = mFollowRealMovementEnabled
-                ? 0
-                : ((mTripHoldDestination) ? mFixedCount : -1);
-            return new LocPoint(mCurrentLocPoint);
-        }
-        else {
-            double factor = (double) mFlyTimeIndex / (double) mFlyTime;
-            LocPoint shaped = TripPathGenerator.getPoint(
-                mOriginLocPoint,
-                mTargetLocPoint,
-                mTripPathType,
-                factor,
-                mTripPathAmplitudeMeters,
-                mTripPathCycles
-            );
-            mFlyTimeIndex++;
-            if (shaped != null) {
-                mCurrentLocPoint = shaped;
-            }
-            return new LocPoint(mCurrentLocPoint);
-        }
+    if (!mFollowRealMovementEnabled && !mIsFlyMode && (mFixedCountRemaining != 0)) {
+        if (mFixedCountRemaining < 0) return null;
+        if (mFixedCountRemaining == 1) mFixedCountRemaining = -1; else mFixedCountRemaining--;
     }
+    if (!mIsFlyMode) return new LocPoint(mCurrentLocPoint);
+    long now = SystemClock.elapsedRealtime();
+    double factor = TripTimeline.progress(mTripStartElapsedMs, mTripDurationMs, now);
+    if (factor >= 1d) {
+        jumpToLocationLocked(mTargetLocPoint);
+        mTripStartElapsedMs = 0L;
+        mTripDurationMs = 0L;
+        mFixedCountRemaining = mFollowRealMovementEnabled ? 0 : ((mTripHoldDestination) ? mFixedCount : -1);
+        return new LocPoint(mCurrentLocPoint);
+    }
+    LocPoint shaped = TripPathGenerator.getPoint(mOriginLocPoint,mTargetLocPoint,mTripPathType,factor,mTripPathAmplitudeMeters,mTripPathCycles);
+    if (shaped != null) mCurrentLocPoint = shaped;
+    return new LocPoint(mCurrentLocPoint);
+}
 
     public boolean shouldContinue() {
-        boolean done;
-
-        synchronized (mLock) {
-            if (!mIsStarted) return false;
-            if (mFollowRealMovementEnabled) return true;
-
-            done = (
-                    (!mIsFlyMode && (mFixedCountRemaining < 0))
-                ||  ( mIsFlyMode && (mFlyTimeIndex > mFlyTime))
-            );
-        }
-
-        if (done) {
-            stop();
-        }
-
-        return !done;
+    boolean done;
+    synchronized (mLock) {
+        if (!mIsStarted) return false;
+        if (mFollowRealMovementEnabled) return true;
+        done = !mIsFlyMode && (mFixedCountRemaining < 0);
     }
+    if (done) stop();
+    return !done;
+}
 
     public void jumpToLocation(LocPoint location) {
         if (location == null) return;
@@ -274,49 +246,25 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         mCurrentSpeedMps = 0f;
     }
 
-    public void flyToLocation(
-    LocPoint location,
-    int trip_duration_seconds
-) {
-    flyToLocation(
-        location,
-        trip_duration_seconds,
-        TripPathGenerator.TYPE_STRAIGHT,
-        TripPathGenerator.DEFAULT_AMPLITUDE_METERS,
-        TripPathGenerator.DEFAULT_CYCLES
-    );
+    public void flyToLocation(LocPoint location, int seconds) {
+    flyToLocation(location, seconds, TripPathGenerator.TYPE_STRAIGHT, TripPathGenerator.DEFAULT_AMPLITUDE_METERS, TripPathGenerator.DEFAULT_CYCLES);
 }
-
-public void flyToLocation(
-    LocPoint location,
-    int trip_duration_seconds,
-    int tripPathType,
-    double tripPathAmplitudeMeters,
-    int tripPathCycles
-) {
+public void flyToLocation(LocPoint location, int seconds, int type, double amplitude, int cycles) {
     if (location == null) return;
-
     synchronized (mLock) {
-        if (mIsStarted && mFixedJoystickEnabled) {
-            hideJoyStick();
-        }
-
+        if (mIsStarted && mFixedJoystickEnabled) hideJoyStick();
         mOriginLocPoint = new LocPoint(mCurrentLocPoint);
         mTargetLocPoint = new LocPoint(location);
-        mTripPathType = TripPathGenerator.sanitizeType(tripPathType);
-        mTripPathAmplitudeMeters =
-            TripPathGenerator.sanitizeAmplitude(tripPathAmplitudeMeters);
-        mTripPathCycles =
-            TripPathGenerator.sanitizeCycles(tripPathCycles);
+        mTripPathType = TripPathGenerator.sanitizeType(type);
+        mTripPathAmplitudeMeters = TripPathGenerator.sanitizeAmplitude(amplitude);
+        mTripPathCycles = TripPathGenerator.sanitizeCycles(cycles);
+        mTripStartElapsedMs = SystemClock.elapsedRealtime();
+        mTripDurationMs = TripTimeline.durationMillis(seconds);
         mIsFlyMode = true;
         mFlyTimeIndex = 0;
-        mFlyTime = convertFlyTime_secondsToLoopIterations(
-            trip_duration_seconds,
-            mTimeInterval
-        );
+        mFlyTime = 0;
         mCurrentSpeedMps = 0f;
     }
-
     updateMotionAndJoystickState();
     persistSessionMaybe(SystemClock.elapsedRealtime(), true);
 }
@@ -330,8 +278,25 @@ public void flyToLocation(
     public void stopFlyMode() {
         synchronized (mLock) {
             mIsFlyMode = false;
+            mTripStartElapsedMs = 0L;
+            mTripDurationMs = 0L;
             mCurrentSpeedMps = 0f;
         }
+    }
+
+    public void ensureTripLoopAwake() {
+        LocationThread thread;
+        boolean start = false;
+        synchronized (mLock) {
+            if (!mIsStarted || !mIsFlyMode || mContext == null) return;
+            thread = mLocationThread;
+            if (thread == null || !thread.isAlive()) {
+                thread = new LocationThread(mContext, this, mTimeInterval);
+                mLocationThread = thread;
+                start = true;
+            }
+        }
+        if (start) thread.startThread(); else thread.kickNow();
     }
 
     public void setMoveStep(double moveStep) {
@@ -573,51 +538,25 @@ public void flyToLocation(
     }
 
     private void persistSessionMaybe(long nowMs, boolean force) {
-        if (mContext == null) return;
-
-        SessionSnapshot snapshot;
-        synchronized (mLock) {
-            if (!mIsStarted || mCurrentLocPoint == null) return;
-            if (!force && mLastSessionPersistMs > 0L && (nowMs - mLastSessionPersistMs) < SESSION_PERSIST_INTERVAL_MS)
-                return;
-
-            mLastSessionPersistMs = nowMs;
-            String mode = mIsFlyMode
-                ? SessionSnapshot.MODE_TRIP
-                : (mFollowRealMovementEnabled
-                    ? SessionSnapshot.MODE_FOLLOW_REAL_MOVEMENT
-                    : SessionSnapshot.MODE_FIXED);
-
-            double tripTargetLatitude = 0d;
-            double tripTargetLongitude = 0d;
-            long tripRemainingMs = 0L;
-
-            if (mIsFlyMode && mTargetLocPoint != null) {
-                tripTargetLatitude = mTargetLocPoint.getLatitude();
-                tripTargetLongitude = mTargetLocPoint.getLongitude();
-                tripRemainingMs = TripProgress.remainingMillis(
-                    mFlyTime,
-                    mFlyTimeIndex,
-                    mTimeInterval
-                );
-            }
-
-            snapshot = new SessionSnapshot(
-                true,
-                mCurrentLocPoint.getLatitude(),
-                mCurrentLocPoint.getLongitude(),
-                mFollowRealMovementEnabled,
-                mStepLengthMeters,
-                mAggressiveKeepAlive,
-                mode,
-                tripTargetLatitude,
-                tripTargetLongitude,
-                tripRemainingMs
-            );
+    if (mContext == null) return;
+    SessionSnapshot snapshot;
+    synchronized (mLock) {
+        if (!mIsStarted || mCurrentLocPoint == null) return;
+        if (!force && mLastSessionPersistMs > 0L && (nowMs - mLastSessionPersistMs) < SESSION_PERSIST_INTERVAL_MS) return;
+        mLastSessionPersistMs = nowMs;
+        String mode = mIsFlyMode ? SessionSnapshot.MODE_TRIP : (mFollowRealMovementEnabled ? SessionSnapshot.MODE_FOLLOW_REAL_MOVEMENT : SessionSnapshot.MODE_FIXED);
+        double targetLat = 0d, targetLon = 0d;
+        long remaining = 0L, endWall = 0L;
+        if (mIsFlyMode && mTargetLocPoint != null) {
+            targetLat = mTargetLocPoint.getLatitude();
+            targetLon = mTargetLocPoint.getLongitude();
+            remaining = TripTimeline.remainingMillis(mTripStartElapsedMs, mTripDurationMs, nowMs);
+            endWall = TripTimeline.wallClockEnd(System.currentTimeMillis(), remaining);
         }
-
-        MockSessionState.save(mContext, snapshot);
+        snapshot = new SessionSnapshot(true,mCurrentLocPoint.getLatitude(),mCurrentLocPoint.getLongitude(),mFollowRealMovementEnabled,mStepLengthMeters,mAggressiveKeepAlive,mode,targetLat,targetLon,remaining,endWall);
     }
+    MockSessionState.save(mContext, snapshot);
+}
 
     private void updateStationarySpeedLocked(long nowMs) {
         if (!mFollowRealMovementEnabled || mLastAcceptedStepMs <= 0L) return;
@@ -640,28 +579,7 @@ public void flyToLocation(
     }
 
     private void updateFlyTime(int new_time_interval) {
-        synchronized (mLock) {
-            if (!mIsStarted || !mIsFlyMode || (mFlyTimeIndex >= mFlyTime))
-                return;
-
-            int remaining_trip_duration_seconds =
-                convertFlyTime_loopIterationsToSeconds(mFlyTime - mFlyTimeIndex, mTimeInterval);
-            int remaining_trip_duration_iterations =
-                convertFlyTime_secondsToLoopIterations(remaining_trip_duration_seconds, new_time_interval);
-
-            mOriginLocPoint = new LocPoint(mCurrentLocPoint);
-            mFlyTimeIndex = 0;
-            mFlyTime = remaining_trip_duration_iterations;
-        }
+        // V10: Trip duration is independent of injection interval.
     }
 
-    private static int convertFlyTime_secondsToLoopIterations(int trip_duration_seconds, int time_interval) {
-        if (time_interval <= 0) time_interval = 100;
-        return (int) Math.ceil((1000f / time_interval) * trip_duration_seconds);
-    }
-
-    private static int convertFlyTime_loopIterationsToSeconds(int trip_duration_iterations, int time_interval) {
-        if (time_interval <= 0) time_interval = 100;
-        return (int) Math.ceil((time_interval / 1000f) * trip_duration_iterations);
-    }
 }
