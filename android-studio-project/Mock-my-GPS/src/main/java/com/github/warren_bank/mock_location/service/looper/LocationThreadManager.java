@@ -14,6 +14,7 @@ import com.github.warren_bank.mock_location.service.recovery.MockSessionState;
 import com.github.warren_bank.mock_location.service.recovery.MockWatchdog;
 import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;
 import com.github.warren_bank.mock_location.service.recovery.TripProgress;
+import com.github.warren_bank.mock_location.service.trip.TripPathGenerator;
 import com.github.warren_bank.mock_location.ui.components.JoyStickView;
 
 import android.content.Context;
@@ -36,6 +37,9 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     private LocPoint mTargetLocPoint;
     private int mFlyTime;
     private int mFlyTimeIndex;
+    private int mTripPathType = TripPathGenerator.TYPE_STRAIGHT;
+    private double mTripPathAmplitudeMeters = TripPathGenerator.DEFAULT_AMPLITUDE_METERS;
+    private int mTripPathCycles = TripPathGenerator.DEFAULT_CYCLES;
 
     private int mTimeInterval;
     private int mFixedCount;
@@ -215,12 +219,19 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
             return new LocPoint(mCurrentLocPoint);
         }
         else {
-            float factor = (float) mFlyTimeIndex / (float) mFlyTime;
-            double lat = mOriginLocPoint.getLatitude() + (factor * (mTargetLocPoint.getLatitude() - mOriginLocPoint.getLatitude()));
-            double lon = mOriginLocPoint.getLongitude() + (factor * (mTargetLocPoint.getLongitude() - mOriginLocPoint.getLongitude()));
+            double factor = (double) mFlyTimeIndex / (double) mFlyTime;
+            LocPoint shaped = TripPathGenerator.getPoint(
+                mOriginLocPoint,
+                mTargetLocPoint,
+                mTripPathType,
+                factor,
+                mTripPathAmplitudeMeters,
+                mTripPathCycles
+            );
             mFlyTimeIndex++;
-            mCurrentLocPoint.setLatitude(lat);
-            mCurrentLocPoint.setLongitude(lon);
+            if (shaped != null) {
+                mCurrentLocPoint = shaped;
+            }
             return new LocPoint(mCurrentLocPoint);
         }
     }
@@ -263,25 +274,52 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         mCurrentSpeedMps = 0f;
     }
 
-    public void flyToLocation(LocPoint location, int trip_duration_seconds) {
-        if (location == null) return;
+    public void flyToLocation(
+    LocPoint location,
+    int trip_duration_seconds
+) {
+    flyToLocation(
+        location,
+        trip_duration_seconds,
+        TripPathGenerator.TYPE_STRAIGHT,
+        TripPathGenerator.DEFAULT_AMPLITUDE_METERS,
+        TripPathGenerator.DEFAULT_CYCLES
+    );
+}
 
-        synchronized (mLock) {
-            if (mIsStarted && mFixedJoystickEnabled) {
-                hideJoyStick();
-            }
+public void flyToLocation(
+    LocPoint location,
+    int trip_duration_seconds,
+    int tripPathType,
+    double tripPathAmplitudeMeters,
+    int tripPathCycles
+) {
+    if (location == null) return;
 
-            mOriginLocPoint = new LocPoint(mCurrentLocPoint);
-            mTargetLocPoint = new LocPoint(location);
-            mIsFlyMode = true;
-            mFlyTimeIndex = 0;
-            mFlyTime = convertFlyTime_secondsToLoopIterations(trip_duration_seconds, mTimeInterval);
-            mCurrentSpeedMps = 0f;
+    synchronized (mLock) {
+        if (mIsStarted && mFixedJoystickEnabled) {
+            hideJoyStick();
         }
 
-        updateMotionAndJoystickState();
-        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+        mOriginLocPoint = new LocPoint(mCurrentLocPoint);
+        mTargetLocPoint = new LocPoint(location);
+        mTripPathType = TripPathGenerator.sanitizeType(tripPathType);
+        mTripPathAmplitudeMeters =
+            TripPathGenerator.sanitizeAmplitude(tripPathAmplitudeMeters);
+        mTripPathCycles =
+            TripPathGenerator.sanitizeCycles(tripPathCycles);
+        mIsFlyMode = true;
+        mFlyTimeIndex = 0;
+        mFlyTime = convertFlyTime_secondsToLoopIterations(
+            trip_duration_seconds,
+            mTimeInterval
+        );
+        mCurrentSpeedMps = 0f;
     }
+
+    updateMotionAndJoystickState();
+    persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+}
 
     public boolean isFlyMode() {
         synchronized (mLock) {

@@ -128,4 +128,43 @@
     -->
     <string name="notification_service_content_line2">Click to open.</string>
 
+
+    <!-- Trip Shapes V9 -->
+    <string name="TripSimulationActivity_field_path">Path shape:</string>
+    <string name="TripSimulationActivity_field_amplitude">Size / width:\n<small>(meters)</small></string>
+    <string name="TripSimulationActivity_field_cycles">Turns / complexity:\n<small>(1–20)</small></string>
+
+    <string-array name="trip_path_type_labels">
+        <item>Straight</item>
+        <item>Arc Left</item>
+        <item>Arc Right</item>
+        <item>S Curve</item>
+        <item>Sine</item>
+        <item>Zigzag</item>
+        <item>Sawtooth</item>
+        <item>Serpentine</item>
+        <item>Slalom</item>
+        <item>Triangle</item>
+        <item>Square</item>
+        <item>Rectangle</item>
+        <item>Diamond</item>
+        <item>Pentagon</item>
+        <item>Hexagon</item>
+        <item>Octagon</item>
+        <item>Circle Loop</item>
+        <item>Ellipse Loop</item>
+        <item>Spiral Out</item>
+        <item>Spiral In</item>
+        <item>Spiral Out + In</item>
+        <item>Figure Eight</item>
+        <item>Infinity</item>
+        <item>Clover</item>
+        <item>Star 5</item>
+        <item>Star 6</item>
+        <item>U-Turn</item>
+        <item>Hairpin</item>
+        <item>Lissajous</item>
+        <item>Smooth Random</item>
+    </string-array>
+
 </resources>
