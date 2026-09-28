@@ -1,0 +1,1507 @@
+name: Build Follow Real Movement V9 Trip Shapes
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout V8 implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: follow-real-movement-v8
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Create V9 implementation branch
+        run: |
+          git fetch origin follow-real-movement-v8
+          git fetch origin follow-real-movement-v9:refs/remotes/origin/follow-real-movement-v9 || true
+          git checkout -B follow-real-movement-v9 origin/follow-real-movement-v8
+          git status --short
+
+      - name: RED - add Trip Shapes tests first
+        run: |
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/trip
+
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/trip/TripPathGeneratorTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.trip;
+
+          import com.github.warren_bank.mock_location.data_model.LocPoint;
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class TripPathGeneratorTest {
+              private static final LocPoint A = new LocPoint(52.2297d, 21.0122d);
+              private static final LocPoint B = new LocPoint(52.2397d, 21.0322d);
+
+              @Test
+              public void libraryContainsAtLeastThirtyShapes() {
+                  assertTrue(TripPathGenerator.TYPE_COUNT >= 30);
+              }
+
+              @Test
+              public void everyShapeStartsAndEndsExactlyAtRequestedFakePoints() {
+                  for (int type = 0; type < TripPathGenerator.TYPE_COUNT; type++) {
+                      LocPoint start = TripPathGenerator.getPoint(A, B, type, 0d, 25d, 3);
+                      LocPoint end = TripPathGenerator.getPoint(A, B, type, 1d, 25d, 3);
+                      assertTrue("start type=" + type, start.equals(A, 1e-9d));
+                      assertTrue("end type=" + type, end.equals(B, 1e-9d));
+                  }
+              }
+
+              @Test
+              public void everyShapeProducesFiniteIntermediateCoordinates() {
+                  for (int type = 0; type < TripPathGenerator.TYPE_COUNT; type++) {
+                      for (int i = 1; i < 10; i++) {
+                          LocPoint p = TripPathGenerator.getPoint(A, B, type, i / 10d, 30d, 4);
+                          assertFalse(Double.isNaN(p.getLatitude()));
+                          assertFalse(Double.isNaN(p.getLongitude()));
+                          assertFalse(Double.isInfinite(p.getLatitude()));
+                          assertFalse(Double.isInfinite(p.getLongitude()));
+                          assertTrue(p.getLatitude() >= -90d && p.getLatitude() <= 90d);
+                          assertTrue(p.getLongitude() >= -180d && p.getLongitude() <= 180d);
+                      }
+                  }
+              }
+
+              @Test
+              public void squareIsNotTheSameAsStraight() {
+                  LocPoint straight = TripPathGenerator.getPoint(
+                      A, B, TripPathGenerator.TYPE_STRAIGHT, 0.25d, 40d, 3
+                  );
+                  LocPoint square = TripPathGenerator.getPoint(
+                      A, B, TripPathGenerator.TYPE_SQUARE, 0.25d, 40d, 3
+                  );
+                  assertFalse(straight.equals(square, 1e-7d));
+              }
+          }
+          EOF
+
+      - name: RED - verify Trip Shapes tests fail before production code
+        run: |
+          cd android-studio-project
+          chmod +x gradlew
+          set +e
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace > ../red-v9.log 2>&1
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "RED unexpectedly passed."
+            cat ../red-v9.log
+            exit 1
+          fi
+
+          if ! grep -q "TripPathGenerator" ../red-v9.log; then
+            echo "RED failed for an unexpected reason."
+            cat ../red-v9.log
+            exit 1
+          fi
+
+          echo "RED confirmed."
+
+      - name: GREEN - add Trip Shapes engine and controls
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("android-studio-project/Mock-my-GPS/src/main")
+          java = root / "java/com/github/warren_bank/mock_location"
+          res = root / "res"
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit("Could not locate " + label)
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # --------------------------------------------------------------
+          # Shape engine. It receives only the already-fake Trip points.
+          # No API for reading real device latitude/longitude is used here.
+          # --------------------------------------------------------------
+          trip_dir = java / "service/trip"
+          trip_dir.mkdir(parents=True, exist_ok=True)
+
+          (trip_dir / "TripPathGenerator.java").write_text(r'''package com.github.warren_bank.mock_location.service.trip;
+
+          import com.github.warren_bank.mock_location.data_model.LocPoint;
+
+          public final class TripPathGenerator {
+              public static final int TYPE_STRAIGHT = 0;
+              public static final int TYPE_ARC_LEFT = 1;
+              public static final int TYPE_ARC_RIGHT = 2;
+              public static final int TYPE_S_CURVE = 3;
+              public static final int TYPE_SINE = 4;
+              public static final int TYPE_ZIGZAG = 5;
+              public static final int TYPE_SAWTOOTH = 6;
+              public static final int TYPE_SERPENTINE = 7;
+              public static final int TYPE_SLALOM = 8;
+              public static final int TYPE_TRIANGLE = 9;
+              public static final int TYPE_SQUARE = 10;
+              public static final int TYPE_RECTANGLE = 11;
+              public static final int TYPE_DIAMOND = 12;
+              public static final int TYPE_PENTAGON = 13;
+              public static final int TYPE_HEXAGON = 14;
+              public static final int TYPE_OCTAGON = 15;
+              public static final int TYPE_CIRCLE_LOOP = 16;
+              public static final int TYPE_ELLIPSE_LOOP = 17;
+              public static final int TYPE_SPIRAL_OUT = 18;
+              public static final int TYPE_SPIRAL_IN = 19;
+              public static final int TYPE_SPIRAL_OUT_IN = 20;
+              public static final int TYPE_FIGURE_EIGHT = 21;
+              public static final int TYPE_INFINITY = 22;
+              public static final int TYPE_CLOVER = 23;
+              public static final int TYPE_STAR_5 = 24;
+              public static final int TYPE_STAR_6 = 25;
+              public static final int TYPE_U_TURN = 26;
+              public static final int TYPE_HAIRPIN = 27;
+              public static final int TYPE_LISSAJOUS = 28;
+              public static final int TYPE_SMOOTH_RANDOM = 29;
+
+              public static final int TYPE_COUNT = 30;
+              public static final double DEFAULT_AMPLITUDE_METERS = 25d;
+              public static final int DEFAULT_CYCLES = 3;
+
+              private static final double EARTH_RADIUS_METERS = 6371000d;
+              private static final double MIN_COS_LAT = 1e-6d;
+
+              private TripPathGenerator() {}
+
+              public static int sanitizeType(int type) {
+                  if (type < 0 || type >= TYPE_COUNT) return TYPE_STRAIGHT;
+                  return type;
+              }
+
+              public static double sanitizeAmplitude(double meters) {
+                  if (Double.isNaN(meters) || Double.isInfinite(meters) || meters <= 0d)
+                      return DEFAULT_AMPLITUDE_METERS;
+                  return Math.max(1d, Math.min(5000d, meters));
+              }
+
+              public static int sanitizeCycles(int cycles) {
+                  if (cycles <= 0) return DEFAULT_CYCLES;
+                  return Math.max(1, Math.min(20, cycles));
+              }
+
+              public static LocPoint getPoint(
+                  LocPoint origin,
+                  LocPoint target,
+                  int type,
+                  double progress,
+                  double amplitudeMeters,
+                  int cycles
+              ) {
+                  if (origin == null || target == null) return null;
+
+                  double t = clamp01(progress);
+                  if (t <= 0d) return new LocPoint(origin);
+                  if (t >= 1d) return new LocPoint(target);
+
+                  type = sanitizeType(type);
+                  double a = sanitizeAmplitude(amplitudeMeters);
+                  int c = sanitizeCycles(cycles);
+
+                  double lat0 = Math.toRadians(origin.getLatitude());
+                  double lat1 = Math.toRadians(target.getLatitude());
+                  double midLat = (lat0 + lat1) * 0.5d;
+                  double cosMidLat = Math.max(MIN_COS_LAT, Math.abs(Math.cos(midLat)));
+
+                  double north = (lat1 - lat0) * EARTH_RADIUS_METERS;
+                  double east = Math.toRadians(
+                      wrapLongitudeDelta(target.getLongitude() - origin.getLongitude())
+                  ) * EARTH_RADIUS_METERS * cosMidLat;
+
+                  double distance = Math.hypot(east, north);
+                  if (distance < 0.01d) {
+                      east = 1d;
+                      north = 0d;
+                      distance = 1d;
+                  }
+
+                  double ux = east / distance;
+                  double uy = north / distance;
+                  double px = -uy;
+                  double py = ux;
+
+                  double[] local = localPoint(type, t, distance, a, c);
+                  double along = local[0];
+                  double side = local[1];
+
+                  double eastOffset = (ux * along) + (px * side);
+                  double northOffset = (uy * along) + (py * side);
+
+                  double outLat = origin.getLatitude()
+                      + Math.toDegrees(northOffset / EARTH_RADIUS_METERS);
+                  double outLon = origin.getLongitude()
+                      + Math.toDegrees(eastOffset / (EARTH_RADIUS_METERS * cosMidLat));
+
+                  outLat = Math.max(-90d, Math.min(90d, outLat));
+                  outLon = normalizeLongitude(outLon);
+                  return new LocPoint(outLat, outLon);
+              }
+
+              private static double[] localPoint(int type, double t, double d, double a, int cycles) {
+                  double x = d * t;
+                  double y = 0d;
+                  double theta = 2d * Math.PI * cycles * t;
+                  double envelope = Math.sin(Math.PI * t);
+
+                  switch (type) {
+                      case TYPE_ARC_LEFT:
+                          y = a * Math.sin(Math.PI * t);
+                          break;
+                      case TYPE_ARC_RIGHT:
+                          y = -a * Math.sin(Math.PI * t);
+                          break;
+                      case TYPE_S_CURVE:
+                          y = a * Math.sin(2d * Math.PI * t);
+                          break;
+                      case TYPE_SINE:
+                          y = a * Math.sin(theta);
+                          break;
+                      case TYPE_ZIGZAG:
+                          y = a * envelope * triangleWave(cycles * t);
+                          break;
+                      case TYPE_SAWTOOTH:
+                          y = a * envelope * sawWave(cycles * t);
+                          break;
+                      case TYPE_SERPENTINE:
+                          y = a * (0.65d + 0.35d * envelope) * Math.sin(theta);
+                          break;
+                      case TYPE_SLALOM:
+                          y = a * envelope * Math.tanh(3d * Math.sin(theta));
+                          break;
+                      case TYPE_TRIANGLE:
+                          y = a * (1d - Math.abs((2d * t) - 1d));
+                          break;
+                      case TYPE_SQUARE:
+                          return threeSideBox(t, d, a);
+                      case TYPE_RECTANGLE:
+                          return threeSideBox(t, d, a * 0.55d);
+                      case TYPE_DIAMOND:
+                          y = a * triangleWave(2d * t) * envelope;
+                          break;
+                      case TYPE_PENTAGON:
+                          return addOffset(x, polygonOffset(t, 5, a, cycles));
+                      case TYPE_HEXAGON:
+                          return addOffset(x, polygonOffset(t, 6, a, cycles));
+                      case TYPE_OCTAGON:
+                          return addOffset(x, polygonOffset(t, 8, a, cycles));
+                      case TYPE_CIRCLE_LOOP: {
+                          double[] o = ellipseLoop(theta, a, a);
+                          x += o[0];
+                          y = o[1];
+                          break;
+                      }
+                      case TYPE_ELLIPSE_LOOP: {
+                          double[] o = ellipseLoop(theta, a * 0.65d, a);
+                          x += o[0];
+                          y = o[1];
+                          break;
+                      }
+                      case TYPE_SPIRAL_OUT: {
+                          double r = a * t;
+                          x += r * (Math.cos(theta) - 1d);
+                          y = r * Math.sin(theta);
+                          break;
+                      }
+                      case TYPE_SPIRAL_IN: {
+                          double r = a * (1d - t);
+                          x += r * (Math.cos(theta) - 1d);
+                          y = r * Math.sin(theta);
+                          break;
+                      }
+                      case TYPE_SPIRAL_OUT_IN: {
+                          double r = a * Math.sin(Math.PI * t);
+                          x += r * (Math.cos(theta) - 1d);
+                          y = r * Math.sin(theta);
+                          break;
+                      }
+                      case TYPE_FIGURE_EIGHT:
+                          x += a * 0.65d * Math.sin(theta);
+                          y = a * 0.50d * Math.sin(2d * theta);
+                          break;
+                      case TYPE_INFINITY:
+                          x += a * 0.80d * Math.sin(2d * theta);
+                          y = a * 0.55d * Math.sin(theta);
+                          break;
+                      case TYPE_CLOVER: {
+                          double r = a * Math.sin(2d * theta);
+                          x += r * Math.cos(theta);
+                          y = r * Math.sin(theta);
+                          break;
+                      }
+                      case TYPE_STAR_5:
+                          return addOffset(x, starOffset(t, 5, a, cycles));
+                      case TYPE_STAR_6:
+                          return addOffset(x, starOffset(t, 6, a, cycles));
+                      case TYPE_U_TURN:
+                          x += a * 0.80d * Math.sin(2d * Math.PI * t);
+                          y = a * Math.sin(Math.PI * t);
+                          break;
+                      case TYPE_HAIRPIN:
+                          x += a * envelope * Math.sin(4d * Math.PI * t);
+                          y = a * envelope * Math.tanh(4d * Math.sin(2d * Math.PI * t));
+                          break;
+                      case TYPE_LISSAJOUS:
+                          x += a * 0.55d * envelope
+                              * Math.sin(2d * Math.PI * (cycles + 1) * t);
+                          y = a * envelope
+                              * Math.sin(2d * Math.PI * (cycles + 2) * t);
+                          break;
+                      case TYPE_SMOOTH_RANDOM:
+                          x += a * 0.18d * envelope * (
+                              Math.sin(6.11d * Math.PI * t)
+                              + 0.45d * Math.sin(13.7d * Math.PI * t + 0.8d)
+                          );
+                          y = a * envelope * (
+                              0.58d * Math.sin(2d * Math.PI * cycles * t + 0.35d)
+                              + 0.27d * Math.sin(2d * Math.PI * (cycles + 3) * t + 1.1d)
+                              + 0.15d * Math.sin(2d * Math.PI * (cycles + 7) * t + 2.4d)
+                          );
+                          break;
+                      case TYPE_STRAIGHT:
+                      default:
+                          break;
+                  }
+
+                  return new double[] {x, y};
+              }
+
+              private static double[] threeSideBox(double t, double d, double height) {
+                  if (t < (1d / 3d)) {
+                      return new double[] {0d, height * (t * 3d)};
+                  }
+                  if (t < (2d / 3d)) {
+                      return new double[] {
+                          d * ((t - (1d / 3d)) * 3d),
+                          height
+                      };
+                  }
+                  return new double[] {
+                      d,
+                      height * (1d - ((t - (2d / 3d)) * 3d))
+                  };
+              }
+
+              private static double[] addOffset(double baseX, double[] offset) {
+                  return new double[] {baseX + offset[0], offset[1]};
+              }
+
+              private static double[] ellipseLoop(double theta, double rx, double ry) {
+                  return new double[] {
+                      rx * (Math.cos(theta) - 1d),
+                      ry * Math.sin(theta)
+                  };
+              }
+
+              private static double[] polygonOffset(
+                  double t,
+                  int sides,
+                  double radius,
+                  int repeats
+              ) {
+                  int n = Math.max(3, sides);
+                  double phase = fractional(t * repeats);
+                  double scaled = phase * n;
+                  int i = (int) Math.floor(scaled);
+                  double u = scaled - i;
+
+                  double a0 = 2d * Math.PI * (i % n) / n;
+                  double a1 = 2d * Math.PI * ((i + 1) % n) / n;
+
+                  double x0 = radius * Math.cos(a0);
+                  double y0 = radius * Math.sin(a0);
+                  double x1 = radius * Math.cos(a1);
+                  double y1 = radius * Math.sin(a1);
+
+                  return new double[] {
+                      lerp(x0, x1, u) - radius,
+                      lerp(y0, y1, u)
+                  };
+              }
+
+              private static double[] starOffset(
+                  double t,
+                  int points,
+                  double radius,
+                  int repeats
+              ) {
+                  int count = points * 2;
+                  double phase = fractional(t * repeats);
+                  double scaled = phase * count;
+                  int i = (int) Math.floor(scaled);
+                  double u = scaled - i;
+
+                  double[] p0 = starVertex(i % count, radius, count);
+                  double[] p1 = starVertex((i + 1) % count, radius, count);
+                  double[] start = starVertex(0, radius, count);
+
+                  return new double[] {
+                      lerp(p0[0], p1[0], u) - start[0],
+                      lerp(p0[1], p1[1], u) - start[1]
+                  };
+              }
+
+              private static double[] starVertex(int index, double radius, int count) {
+                  double r = ((index & 1) == 0) ? radius : radius * 0.42d;
+                  double angle = 2d * Math.PI * index / count;
+                  return new double[] {
+                      r * Math.cos(angle),
+                      r * Math.sin(angle)
+                  };
+              }
+
+              private static double triangleWave(double value) {
+                  double f = fractional(value);
+                  return 1d - (4d * Math.abs(f - 0.5d));
+              }
+
+              private static double sawWave(double value) {
+                  return (2d * fractional(value)) - 1d;
+              }
+
+              private static double fractional(double value) {
+                  return value - Math.floor(value);
+              }
+
+              private static double lerp(double a, double b, double t) {
+                  return a + ((b - a) * t);
+              }
+
+              private static double clamp01(double value) {
+                  if (Double.isNaN(value) || Double.isInfinite(value)) return 0d;
+                  return Math.max(0d, Math.min(1d, value));
+              }
+
+              private static double wrapLongitudeDelta(double degrees) {
+                  double value = degrees % 360d;
+                  if (value > 180d) value -= 360d;
+                  if (value < -180d) value += 360d;
+                  return value;
+              }
+
+              private static double normalizeLongitude(double longitude) {
+                  double value = longitude % 360d;
+                  if (value > 180d) value -= 360d;
+                  if (value < -180d) value += 360d;
+                  return value;
+              }
+          }
+          ''', encoding="utf-8")
+
+          # --------------------------------------------------------------
+          # Persistent Trip Shapes settings.
+          # --------------------------------------------------------------
+          (trip_dir / "TripPathPrefs.java").write_text(r'''package com.github.warren_bank.mock_location.service.trip;
+
+          import com.github.warren_bank.mock_location.data_model.SharedPrefs;
+
+          import android.content.Context;
+          import android.content.SharedPreferences;
+
+          public final class TripPathPrefs {
+              private static final String KEY_TYPE = "trip_shape_type_v9";
+              private static final String KEY_AMPLITUDE = "trip_shape_amplitude_v9";
+              private static final String KEY_CYCLES = "trip_shape_cycles_v9";
+
+              private TripPathPrefs() {}
+
+              public static int getType(Context context) {
+                  int value = SharedPrefs.getSharedPreferences(context)
+                      .getInt(KEY_TYPE, TripPathGenerator.TYPE_STRAIGHT);
+                  return TripPathGenerator.sanitizeType(value);
+              }
+
+              public static double getAmplitude(Context context) {
+                  long bits = SharedPrefs.getSharedPreferences(context).getLong(
+                      KEY_AMPLITUDE,
+                      Double.doubleToLongBits(TripPathGenerator.DEFAULT_AMPLITUDE_METERS)
+                  );
+                  return TripPathGenerator.sanitizeAmplitude(Double.longBitsToDouble(bits));
+              }
+
+              public static int getCycles(Context context) {
+                  int value = SharedPrefs.getSharedPreferences(context)
+                      .getInt(KEY_CYCLES, TripPathGenerator.DEFAULT_CYCLES);
+                  return TripPathGenerator.sanitizeCycles(value);
+              }
+
+              public static void save(
+                  Context context,
+                  int type,
+                  double amplitude,
+                  int cycles
+              ) {
+                  SharedPreferences.Editor editor =
+                      SharedPrefs.getSharedPreferences(context).edit();
+                  editor.putInt(KEY_TYPE, TripPathGenerator.sanitizeType(type));
+                  editor.putLong(
+                      KEY_AMPLITUDE,
+                      Double.doubleToLongBits(
+                          TripPathGenerator.sanitizeAmplitude(amplitude)
+                      )
+                  );
+                  editor.putInt(KEY_CYCLES, TripPathGenerator.sanitizeCycles(cycles));
+                  editor.commit();
+              }
+          }
+          ''', encoding="utf-8")
+
+          # --------------------------------------------------------------
+          # Extend TripEditState.
+          # --------------------------------------------------------------
+          (java / "ui/logic/TripEditState.java").write_text(r'''package com.github.warren_bank.mock_location.ui.logic;
+
+          public final class TripEditState {
+              public static final short ORIGIN_MASK = (1 << 0);
+              public static final short DESTINATION_MASK = (1 << 1);
+              public static final short DURATION_MASK = (1 << 2);
+              public static final short PATH_TYPE_MASK = (1 << 3);
+              public static final short PATH_AMPLITUDE_MASK = (1 << 4);
+              public static final short PATH_CYCLES_MASK = (1 << 5);
+
+              private TripEditState() {}
+
+              public static short update(short diffFields, short mask, boolean changed) {
+                  return changed
+                      ? (short) (diffFields | mask)
+                      : (short) (diffFields & ~mask);
+              }
+          }
+          ''', encoding="utf-8")
+
+          # --------------------------------------------------------------
+          # Strings + 30 shape names.
+          # --------------------------------------------------------------
+          strings = res / "values/strings.xml"
+          text = strings.read_text(encoding="utf-8")
+          additions = r'''
+              <!-- Trip Shapes V9 -->
+              <string name="TripSimulationActivity_field_path">Path shape:</string>
+              <string name="TripSimulationActivity_field_amplitude">Size / width:\n<small>(meters)</small></string>
+              <string name="TripSimulationActivity_field_cycles">Turns / complexity:\n<small>(1–20)</small></string>
+
+              <string-array name="trip_path_type_labels">
+                  <item>Straight</item>
+                  <item>Arc Left</item>
+                  <item>Arc Right</item>
+                  <item>S Curve</item>
+                  <item>Sine</item>
+                  <item>Zigzag</item>
+                  <item>Sawtooth</item>
+                  <item>Serpentine</item>
+                  <item>Slalom</item>
+                  <item>Triangle</item>
+                  <item>Square</item>
+                  <item>Rectangle</item>
+                  <item>Diamond</item>
+                  <item>Pentagon</item>
+                  <item>Hexagon</item>
+                  <item>Octagon</item>
+                  <item>Circle Loop</item>
+                  <item>Ellipse Loop</item>
+                  <item>Spiral Out</item>
+                  <item>Spiral In</item>
+                  <item>Spiral Out + In</item>
+                  <item>Figure Eight</item>
+                  <item>Infinity</item>
+                  <item>Clover</item>
+                  <item>Star 5</item>
+                  <item>Star 6</item>
+                  <item>U-Turn</item>
+                  <item>Hairpin</item>
+                  <item>Lissajous</item>
+                  <item>Smooth Random</item>
+              </string-array>
+          '''
+          if "</resources>" not in text:
+              raise SystemExit("strings.xml end marker missing")
+          strings.write_text(
+              text.replace("</resources>", additions + "\n</resources>", 1),
+              encoding="utf-8"
+          )
+
+          # --------------------------------------------------------------
+          # Trip screen controls.
+          # --------------------------------------------------------------
+          layout = res / "layout/activity_trip_simulation.xml"
+          text = layout.read_text(encoding="utf-8")
+          needle = '''        <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="@string/TripSimulationActivity_field_3"
+                      style="@style/input_label_textview" />
+          '''
+          insert = '''        <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="@string/TripSimulationActivity_field_path"
+                      style="@style/input_label_textview" />
+
+                  <Spinner
+                      android:id="@+id/input_trip_path_type"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:entries="@array/trip_path_type_labels" />
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="@string/TripSimulationActivity_field_amplitude"
+                      style="@style/input_label_textview" />
+
+                  <EditText
+                      android:id="@+id/input_trip_path_amplitude"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:inputType="numberDecimal" />
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="@string/TripSimulationActivity_field_cycles"
+                      style="@style/input_label_textview" />
+
+                  <EditText
+                      android:id="@+id/input_trip_path_cycles"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:inputType="number" />
+
+          ''' + needle
+          if needle not in text:
+              raise SystemExit("Trip layout insertion marker missing")
+          layout.write_text(text.replace(needle, insert, 1), encoding="utf-8")
+
+          # --------------------------------------------------------------
+          # Full Trip activity, preserving V8 one-click START.
+          # --------------------------------------------------------------
+          (java / "ui/TripSimulationActivity.java").write_text(r'''package com.github.warren_bank.mock_location.ui;
+
+          import com.github.warren_bank.mock_location.R;
+          import com.github.warren_bank.mock_location.data_model.BookmarkItem;
+          import com.github.warren_bank.mock_location.data_model.LocPoint;
+          import com.github.warren_bank.mock_location.data_model.SharedPrefs;
+          import com.github.warren_bank.mock_location.security_model.RuntimePermissions;
+          import com.github.warren_bank.mock_location.service.LocationService;
+          import com.github.warren_bank.mock_location.service.trip.TripPathGenerator;
+          import com.github.warren_bank.mock_location.service.trip.TripPathPrefs;
+          import com.github.warren_bank.mock_location.ui.logic.TripEditState;
+          import com.github.warren_bank.mock_location.ui.logic.TripStartPermissionPolicy;
+          import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsListener;
+          import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsRequester;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.text.Editable;
+          import android.text.TextWatcher;
+          import android.view.View;
+          import android.widget.AdapterView;
+          import android.widget.Button;
+          import android.widget.Spinner;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          public class TripSimulationActivity extends Activity
+          implements RuntimePermissionsListener {
+              private LocPoint originalLocOrigin;
+              private LocPoint originalLocDestination;
+              private int originalTripDuration;
+              private int originalPathType;
+              private double originalPathAmplitude;
+              private int originalPathCycles;
+
+              private TextView label_trip_origin;
+              private TextView input_trip_origin;
+              private TextView label_trip_destination;
+              private TextView input_trip_destination;
+              private TextView input_trip_duration;
+              private Spinner input_trip_path_type;
+              private TextView input_trip_path_amplitude;
+              private TextView input_trip_path_cycles;
+              private Button button_toggle_state;
+              private Button button_update;
+
+              private short diff_fields = 0;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  setContentView(R.layout.activity_trip_simulation);
+
+                  loadOriginals();
+
+                  label_trip_origin = (TextView) findViewById(R.id.label_trip_origin);
+                  input_trip_origin = (TextView) findViewById(R.id.input_trip_origin);
+                  label_trip_destination = (TextView) findViewById(R.id.label_trip_destination);
+                  input_trip_destination = (TextView) findViewById(R.id.input_trip_destination);
+                  input_trip_duration = (TextView) findViewById(R.id.input_trip_duration);
+                  input_trip_path_type = (Spinner) findViewById(R.id.input_trip_path_type);
+                  input_trip_path_amplitude = (TextView) findViewById(R.id.input_trip_path_amplitude);
+                  input_trip_path_cycles = (TextView) findViewById(R.id.input_trip_path_cycles);
+                  button_toggle_state = (Button) findViewById(R.id.button_toggle_state);
+                  button_update = (Button) findViewById(R.id.button_update);
+
+                  input_trip_origin.addTextChangedListener(new SimpleWatcher() {
+                      public void afterTextChanged(Editable s) {
+                          label_trip_origin.setVisibility(View.GONE);
+                          if (!LocationService.isTripModeStarted()) return;
+                          try {
+                              LocPoint value = new LocPoint(s.toString());
+                              diff_fields = TripEditState.update(
+                                  diff_fields,
+                                  TripEditState.ORIGIN_MASK,
+                                  !originalLocOrigin.equals(value)
+                              );
+                              checkDiff();
+                          }
+                          catch(Exception e) {}
+                      }
+                  });
+
+                  input_trip_destination.addTextChangedListener(new SimpleWatcher() {
+                      public void afterTextChanged(Editable s) {
+                          label_trip_destination.setVisibility(View.GONE);
+                          if (!LocationService.isTripModeStarted()) return;
+                          try {
+                              LocPoint value = new LocPoint(s.toString());
+                              diff_fields = TripEditState.update(
+                                  diff_fields,
+                                  TripEditState.DESTINATION_MASK,
+                                  !originalLocDestination.equals(value)
+                              );
+                              checkDiff();
+                          }
+                          catch(Exception e) {}
+                      }
+                  });
+
+                  input_trip_duration.addTextChangedListener(new SimpleWatcher() {
+                      public void afterTextChanged(Editable s) {
+                          if (!LocationService.isTripModeStarted()) return;
+                          try {
+                              int value = Integer.parseInt(s.toString(), 10);
+                              diff_fields = TripEditState.update(
+                                  diff_fields,
+                                  TripEditState.DURATION_MASK,
+                                  originalTripDuration != value
+                              );
+                              checkDiff();
+                          }
+                          catch(Exception e) {}
+                      }
+                  });
+
+                  input_trip_path_amplitude.addTextChangedListener(new SimpleWatcher() {
+                      public void afterTextChanged(Editable s) {
+                          if (!LocationService.isTripModeStarted()) return;
+                          try {
+                              double value = TripPathGenerator.sanitizeAmplitude(
+                                  Double.parseDouble(s.toString().replace(',', '.'))
+                              );
+                              diff_fields = TripEditState.update(
+                                  diff_fields,
+                                  TripEditState.PATH_AMPLITUDE_MASK,
+                                  Math.abs(originalPathAmplitude - value) > 1e-9d
+                              );
+                              checkDiff();
+                          }
+                          catch(Exception e) {}
+                      }
+                  });
+
+                  input_trip_path_cycles.addTextChangedListener(new SimpleWatcher() {
+                      public void afterTextChanged(Editable s) {
+                          if (!LocationService.isTripModeStarted()) return;
+                          try {
+                              int value = TripPathGenerator.sanitizeCycles(
+                                  Integer.parseInt(s.toString(), 10)
+                              );
+                              diff_fields = TripEditState.update(
+                                  diff_fields,
+                                  TripEditState.PATH_CYCLES_MASK,
+                                  originalPathCycles != value
+                              );
+                              checkDiff();
+                          }
+                          catch(Exception e) {}
+                      }
+                  });
+
+                  input_trip_path_type.setOnItemSelectedListener(
+                      new AdapterView.OnItemSelectedListener() {
+                          public void onItemSelected(
+                              AdapterView<?> parent,
+                              View view,
+                              int position,
+                              long id
+                          ) {
+                              if (!LocationService.isTripModeStarted()) return;
+                              int value = TripPathGenerator.sanitizeType(position);
+                              diff_fields = TripEditState.update(
+                                  diff_fields,
+                                  TripEditState.PATH_TYPE_MASK,
+                                  originalPathType != value
+                              );
+                              checkDiff();
+                          }
+
+                          public void onNothingSelected(AdapterView<?> parent) {}
+                      }
+                  );
+
+                  button_toggle_state.setOnClickListener(new View.OnClickListener() {
+                      public void onClick(View v) {
+                          if (LocationService.isTripModeStarted()) {
+                              LocationService.doStop(
+                                  TripSimulationActivity.this,
+                                  true
+                              );
+                              button_toggle_state.setText(R.string.label_button_start);
+                              button_update.setVisibility(View.GONE);
+                          }
+                          else {
+                              requestPermissions();
+                          }
+                      }
+                  });
+
+                  button_update.setOnClickListener(new View.OnClickListener() {
+                      public void onClick(View v) {
+                          if (LocationService.isTripModeStarted()) {
+                              requestPermissions();
+                          }
+                          else {
+                              button_update.setVisibility(View.GONE);
+                          }
+                      }
+                  });
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+
+                  LocPoint origin = SharedPrefs.getTripOrigin(this);
+                  LocPoint destination = SharedPrefs.getTripDestination(this);
+                  int duration = SharedPrefs.getTripDuration(this);
+                  int pathType = TripPathPrefs.getType(this);
+                  double amplitude = TripPathPrefs.getAmplitude(this);
+                  int cycles = TripPathPrefs.getCycles(this);
+
+                  if (!LocationService.isTripModeStarted()) {
+                      originalLocOrigin = origin;
+                      originalLocDestination = destination;
+                      originalTripDuration = duration;
+                      originalPathType = pathType;
+                      originalPathAmplitude = amplitude;
+                      originalPathCycles = cycles;
+                      diff_fields = 0;
+                  }
+
+                  reset(origin, destination, duration, pathType, amplitude, cycles);
+              }
+
+              private void loadOriginals() {
+                  originalLocOrigin = SharedPrefs.getTripOrigin(this);
+                  originalLocDestination = SharedPrefs.getTripDestination(this);
+                  originalTripDuration = SharedPrefs.getTripDuration(this);
+                  originalPathType = TripPathPrefs.getType(this);
+                  originalPathAmplitude = TripPathPrefs.getAmplitude(this);
+                  originalPathCycles = TripPathPrefs.getCycles(this);
+              }
+
+              private void reset(
+                  LocPoint origin,
+                  LocPoint destination,
+                  int duration,
+                  int pathType,
+                  double amplitude,
+                  int cycles
+              ) {
+                  label_trip_origin.setVisibility(View.GONE);
+                  label_trip_destination.setVisibility(View.GONE);
+
+                  input_trip_origin.setText(origin.toString());
+                  input_trip_destination.setText(destination.toString());
+                  input_trip_duration.setText(Integer.toString(duration, 10));
+                  input_trip_path_type.setSelection(
+                      TripPathGenerator.sanitizeType(pathType)
+                  );
+                  input_trip_path_amplitude.setText(
+                      Double.toString(
+                          TripPathGenerator.sanitizeAmplitude(amplitude)
+                      )
+                  );
+                  input_trip_path_cycles.setText(
+                      Integer.toString(
+                          TripPathGenerator.sanitizeCycles(cycles),
+                          10
+                      )
+                  );
+
+                  BookmarkItem item = SharedPrefs.getBookmarkItem(this, origin);
+                  if (item != null) {
+                      label_trip_origin.setText(item.title);
+                      label_trip_origin.setVisibility(View.VISIBLE);
+                  }
+
+                  item = SharedPrefs.getBookmarkItem(this, destination);
+                  if (item != null) {
+                      label_trip_destination.setText(item.title);
+                      label_trip_destination.setVisibility(View.VISIBLE);
+                  }
+
+                  if (LocationService.isTripModeStarted()) {
+                      button_toggle_state.setText(R.string.label_button_stop);
+                      checkDiff();
+                  }
+                  else {
+                      button_toggle_state.setText(R.string.label_button_start);
+                      button_update.setVisibility(View.GONE);
+                  }
+              }
+
+              private void checkDiff() {
+                  button_update.setVisibility(
+                      (diff_fields == 0) ? View.GONE : View.VISIBLE
+                  );
+              }
+
+              private void requestPermissions() {
+                  boolean granted =
+                      RuntimePermissions.hasMandatoryPermissions(this);
+
+                  if (
+                      TripStartPermissionPolicy.shouldStartImmediately(granted)
+                  ) {
+                      doStart();
+                      return;
+                  }
+
+                  RuntimePermissionsRequester requester =
+                      (RuntimePermissionsRequester) getParent();
+                  requester.requestTripRuntimePermissions(this);
+              }
+
+              public void doStart() {
+                  try {
+                      LocPoint origin = new LocPoint(
+                          input_trip_origin.getText().toString()
+                      );
+                      LocPoint destination = new LocPoint(
+                          input_trip_destination.getText().toString()
+                      );
+                      int duration = Integer.parseInt(
+                          input_trip_duration.getText().toString(),
+                          10
+                      );
+                      int pathType = TripPathGenerator.sanitizeType(
+                          input_trip_path_type.getSelectedItemPosition()
+                      );
+                      double amplitude =
+                          TripPathGenerator.sanitizeAmplitude(
+                              Double.parseDouble(
+                                  input_trip_path_amplitude
+                                      .getText()
+                                      .toString()
+                                      .replace(',', '.')
+                              )
+                          );
+                      int cycles = TripPathGenerator.sanitizeCycles(
+                          Integer.parseInt(
+                              input_trip_path_cycles.getText().toString(),
+                              10
+                          )
+                      );
+
+                      LocationService.doStart(
+                          this,
+                          true,
+                          origin,
+                          destination,
+                          duration,
+                          pathType,
+                          amplitude,
+                          cycles
+                      );
+
+                      SharedPrefs.putTripOrigin(this, origin);
+                      SharedPrefs.putTripDestination(this, destination);
+                      SharedPrefs.putTripDuration(this, duration);
+                      TripPathPrefs.save(this, pathType, amplitude, cycles);
+
+                      originalLocOrigin = origin;
+                      originalLocDestination = destination;
+                      originalTripDuration = duration;
+                      originalPathType = pathType;
+                      originalPathAmplitude = amplitude;
+                      originalPathCycles = cycles;
+                      diff_fields = 0;
+
+                      button_toggle_state.setText(R.string.label_button_stop);
+                      button_update.setVisibility(View.GONE);
+                  }
+                  catch (Exception e) {
+                      Toast.makeText(
+                          this,
+                          "Could not start Trip: " + e.getMessage(),
+                          Toast.LENGTH_LONG
+                      ).show();
+                  }
+              }
+
+              private abstract static class SimpleWatcher
+              implements TextWatcher {
+                  public void beforeTextChanged(
+                      CharSequence s,
+                      int start,
+                      int count,
+                      int after
+                  ) {}
+
+                  public void onTextChanged(
+                      CharSequence s,
+                      int start,
+                      int before,
+                      int count
+                  ) {}
+              }
+          }
+          ''', encoding="utf-8")
+
+          # --------------------------------------------------------------
+          # LocationService: carry selected shape into the Trip.
+          # --------------------------------------------------------------
+          service = java / "service/LocationService.java"
+
+          replace_once(
+              service,
+              "import com.github.warren_bank.mock_location.service.recovery.TripProgress;\n",
+              "import com.github.warren_bank.mock_location.service.recovery.TripProgress;\n"
+              "import com.github.warren_bank.mock_location.service.trip.TripPathGenerator;\n"
+              "import com.github.warren_bank.mock_location.service.trip.TripPathPrefs;\n",
+              "LocationService imports"
+          )
+
+          replace_once(
+              service,
+              '''    private final static String EXTRA_TRIP_DURATION   = "TRIP_DURATION";
+          ''',
+              '''    private final static String EXTRA_TRIP_DURATION   = "TRIP_DURATION";
+              private final static String EXTRA_TRIP_PATH_TYPE = "TRIP_PATH_TYPE";
+              private final static String EXTRA_TRIP_PATH_AMPLITUDE = "TRIP_PATH_AMPLITUDE";
+              private final static String EXTRA_TRIP_PATH_CYCLES = "TRIP_PATH_CYCLES";
+          ''',
+              "LocationService extras"
+          )
+
+          replace_once(
+              service,
+              '''                LTM.flyToLocation(
+                          new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude),
+                          remainingSeconds
+                      );
+          ''',
+              '''                LTM.flyToLocation(
+                          new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude),
+                          remainingSeconds,
+                          TripPathPrefs.getType(LocationService.this),
+                          TripPathPrefs.getAmplitude(LocationService.this),
+                          TripPathPrefs.getCycles(LocationService.this)
+                      );
+          ''',
+              "LocationService restore Trip"
+          )
+
+          replace_once(
+              service,
+              '''        int    trip_duration   = intent.getIntExtra(EXTRA_TRIP_DURATION,      0);
+          ''',
+              '''        int    trip_duration   = intent.getIntExtra(EXTRA_TRIP_DURATION,      0);
+              int trip_path_type = intent.getIntExtra(
+                  EXTRA_TRIP_PATH_TYPE,
+                  TripPathGenerator.TYPE_STRAIGHT
+              );
+              double trip_path_amplitude = intent.getDoubleExtra(
+                  EXTRA_TRIP_PATH_AMPLITUDE,
+                  TripPathGenerator.DEFAULT_AMPLITUDE_METERS
+              );
+              int trip_path_cycles = intent.getIntExtra(
+                  EXTRA_TRIP_PATH_CYCLES,
+                  TripPathGenerator.DEFAULT_CYCLES
+              );
+          ''',
+              "LocationService parsed Trip extras"
+          )
+
+          replace_once(
+              service,
+              "        LTM.flyToLocation(destination, trip_duration);\n",
+              '''        LTM.flyToLocation(
+                  destination,
+                  trip_duration,
+                  trip_path_type,
+                  trip_path_amplitude,
+                  trip_path_cycles
+              );
+          ''',
+              "LocationService shaped flyToLocation"
+          )
+
+          service_text = service.read_text(encoding="utf-8")
+          old = '''    public static Intent doStart(
+                  Context context,
+                  boolean broadcast,
+                  LocPoint origin,
+                  LocPoint destination,
+                  int trip_duration
+              ) {
+                  if (origin == null)
+                      return null;
+
+                  Intent intent = new Intent(context, LocationService.class);
+                  addIntentExtras(intent, origin, destination, trip_duration);
+                  return doAction(context, intent, ACTION_START, broadcast);
+              }
+
+              private static void addIntentExtras(
+                  Intent intent,
+                  LocPoint origin,
+                  LocPoint destination,
+                  int trip_duration
+              ) {
+                  boolean is_trip = (destination != null) && (trip_duration > 0);
+
+                  intent.putExtra(EXTRA_ORIGIN_LAT, origin.getLatitude());
+                  intent.putExtra(EXTRA_ORIGIN_LON, origin.getLongitude());
+
+                  if (is_trip) {
+                      intent.putExtra(EXTRA_DESTINATION_LAT, destination.getLatitude());
+                      intent.putExtra(EXTRA_DESTINATION_LON, destination.getLongitude());
+                      intent.putExtra(EXTRA_TRIP_DURATION, trip_duration);
+                  }
+              }
+          '''
+          new = '''    public static Intent doStart(
+                  Context context,
+                  boolean broadcast,
+                  LocPoint origin,
+                  LocPoint destination,
+                  int trip_duration
+              ) {
+                  return doStart(
+                      context,
+                      broadcast,
+                      origin,
+                      destination,
+                      trip_duration,
+                      TripPathGenerator.TYPE_STRAIGHT,
+                      TripPathGenerator.DEFAULT_AMPLITUDE_METERS,
+                      TripPathGenerator.DEFAULT_CYCLES
+                  );
+              }
+
+              public static Intent doStart(
+                  Context context,
+                  boolean broadcast,
+                  LocPoint origin,
+                  LocPoint destination,
+                  int trip_duration,
+                  int trip_path_type,
+                  double trip_path_amplitude,
+                  int trip_path_cycles
+              ) {
+                  if (origin == null)
+                      return null;
+
+                  Intent intent = new Intent(context, LocationService.class);
+                  addIntentExtras(
+                      intent,
+                      origin,
+                      destination,
+                      trip_duration,
+                      trip_path_type,
+                      trip_path_amplitude,
+                      trip_path_cycles
+                  );
+                  return doAction(context, intent, ACTION_START, broadcast);
+              }
+
+              private static void addIntentExtras(
+                  Intent intent,
+                  LocPoint origin,
+                  LocPoint destination,
+                  int trip_duration,
+                  int trip_path_type,
+                  double trip_path_amplitude,
+                  int trip_path_cycles
+              ) {
+                  boolean is_trip =
+                      (destination != null) && (trip_duration > 0);
+
+                  intent.putExtra(EXTRA_ORIGIN_LAT, origin.getLatitude());
+                  intent.putExtra(EXTRA_ORIGIN_LON, origin.getLongitude());
+
+                  if (is_trip) {
+                      intent.putExtra(
+                          EXTRA_DESTINATION_LAT,
+                          destination.getLatitude()
+                      );
+                      intent.putExtra(
+                          EXTRA_DESTINATION_LON,
+                          destination.getLongitude()
+                      );
+                      intent.putExtra(EXTRA_TRIP_DURATION, trip_duration);
+                      intent.putExtra(
+                          EXTRA_TRIP_PATH_TYPE,
+                          TripPathGenerator.sanitizeType(trip_path_type)
+                      );
+                      intent.putExtra(
+                          EXTRA_TRIP_PATH_AMPLITUDE,
+                          TripPathGenerator.sanitizeAmplitude(
+                              trip_path_amplitude
+                          )
+                      );
+                      intent.putExtra(
+                          EXTRA_TRIP_PATH_CYCLES,
+                          TripPathGenerator.sanitizeCycles(
+                              trip_path_cycles
+                          )
+                      );
+                  }
+              }
+          '''
+          if old not in service_text:
+              raise SystemExit("LocationService doStart block not found")
+          service.write_text(
+              service_text.replace(old, new, 1),
+              encoding="utf-8"
+          )
+
+          # --------------------------------------------------------------
+          # LocationThreadManager: replace straight interpolation.
+          # --------------------------------------------------------------
+          manager = java / "service/looper/LocationThreadManager.java"
+
+          replace_once(
+              manager,
+              "import com.github.warren_bank.mock_location.service.recovery.TripProgress;\n",
+              "import com.github.warren_bank.mock_location.service.recovery.TripProgress;\n"
+              "import com.github.warren_bank.mock_location.service.trip.TripPathGenerator;\n",
+              "LocationThreadManager import"
+          )
+
+          replace_once(
+              manager,
+              '''    private int mFlyTime;
+              private int mFlyTimeIndex;
+          ''',
+              '''    private int mFlyTime;
+              private int mFlyTimeIndex;
+              private int mTripPathType = TripPathGenerator.TYPE_STRAIGHT;
+              private double mTripPathAmplitudeMeters =
+                  TripPathGenerator.DEFAULT_AMPLITUDE_METERS;
+              private int mTripPathCycles = TripPathGenerator.DEFAULT_CYCLES;
+          ''',
+              "LocationThreadManager shape fields"
+          )
+
+          replace_once(
+              manager,
+              '''        else {
+                  float factor = (float) mFlyTimeIndex / (float) mFlyTime;
+                  double lat = mOriginLocPoint.getLatitude() + (factor * (mTargetLocPoint.getLatitude() - mOriginLocPoint.getLatitude()));
+                  double lon = mOriginLocPoint.getLongitude() + (factor * (mTargetLocPoint.getLongitude() - mOriginLocPoint.getLongitude()));
+                  mFlyTimeIndex++;
+                  mCurrentLocPoint.setLatitude(lat);
+                  mCurrentLocPoint.setLongitude(lon);
+                  return new LocPoint(mCurrentLocPoint);
+              }
+          ''',
+              '''        else {
+                  double factor =
+                      (double) mFlyTimeIndex / (double) mFlyTime;
+
+                  LocPoint shaped = TripPathGenerator.getPoint(
+                      mOriginLocPoint,
+                      mTargetLocPoint,
+                      mTripPathType,
+                      factor,
+                      mTripPathAmplitudeMeters,
+                      mTripPathCycles
+                  );
+
+                  mFlyTimeIndex++;
+                  if (shaped != null) {
+                      mCurrentLocPoint = shaped;
+                  }
+
+                  return new LocPoint(mCurrentLocPoint);
+              }
+          ''',
+              "LocationThreadManager interpolation"
+          )
+
+          replace_once(
+              manager,
+              '''    public void flyToLocation(LocPoint location, int trip_duration_seconds) {
+                  if (location == null) return;
+
+                  synchronized (mLock) {
+                      if (mIsStarted && mFixedJoystickEnabled) {
+                          hideJoyStick();
+                      }
+
+                      mOriginLocPoint = new LocPoint(mCurrentLocPoint);
+                      mTargetLocPoint = new LocPoint(location);
+                      mIsFlyMode = true;
+                      mFlyTimeIndex = 0;
+                      mFlyTime = convertFlyTime_secondsToLoopIterations(trip_duration_seconds, mTimeInterval);
+                      mCurrentSpeedMps = 0f;
+                  }
+
+                  updateMotionAndJoystickState();
+                  persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+              }
+          ''',
+              '''    public void flyToLocation(
+                  LocPoint location,
+                  int trip_duration_seconds
+              ) {
+                  flyToLocation(
+                      location,
+                      trip_duration_seconds,
+                      TripPathGenerator.TYPE_STRAIGHT,
+                      TripPathGenerator.DEFAULT_AMPLITUDE_METERS,
+                      TripPathGenerator.DEFAULT_CYCLES
+                  );
+              }
+
+              public void flyToLocation(
+                  LocPoint location,
+                  int trip_duration_seconds,
+                  int tripPathType,
+                  double tripPathAmplitudeMeters,
+                  int tripPathCycles
+              ) {
+                  if (location == null) return;
+
+                  synchronized (mLock) {
+                      if (mIsStarted && mFixedJoystickEnabled) {
+                          hideJoyStick();
+                      }
+
+                      mOriginLocPoint = new LocPoint(mCurrentLocPoint);
+                      mTargetLocPoint = new LocPoint(location);
+                      mTripPathType =
+                          TripPathGenerator.sanitizeType(tripPathType);
+                      mTripPathAmplitudeMeters =
+                          TripPathGenerator.sanitizeAmplitude(
+                              tripPathAmplitudeMeters
+                          );
+                      mTripPathCycles =
+                          TripPathGenerator.sanitizeCycles(
+                              tripPathCycles
+                          );
+                      mIsFlyMode = true;
+                      mFlyTimeIndex = 0;
+                      mFlyTime = convertFlyTime_secondsToLoopIterations(
+                          trip_duration_seconds,
+                          mTimeInterval
+                      );
+                      mCurrentSpeedMps = 0f;
+                  }
+
+                  updateMotionAndJoystickState();
+                  persistSessionMaybe(
+                      SystemClock.elapsedRealtime(),
+                      true
+                  );
+              }
+          ''',
+              "LocationThreadManager flyToLocation"
+          )
+          PY
+
+      - name: GREEN - run full unit test task
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace | tee ../green-v9-tests.log
+
+      - name: Build GMS and AOSP V9 debug APKs
+        run: |
+          cd android-studio-project
+          ./gradlew \
+            :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug \
+            :Mock-my-GPS:assembleEnglishWithAospLocationProvidersWithBackupRestoreSAFDebug \
+            --stacktrace | tee ../build-v9.log
+
+      - name: Verify V9 integration and V8 one-tap protection
+        run: |
+          grep -q "TYPE_COUNT = 30" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/trip/TripPathGenerator.java
+          grep -q "input_trip_path_type" android-studio-project/Mock-my-GPS/src/main/res/layout/activity_trip_simulation.xml
+          grep -q "trip_path_type_labels" android-studio-project/Mock-my-GPS/src/main/res/values/strings.xml
+          grep -q "TripPathGenerator.getPoint" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java
+
+          # V8 one-click START is intentionally preserved.
+          grep -q "TripStartPermissionPolicy.shouldStartImmediately" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+          grep -q "requestTripRuntimePermissions" android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java
+
+          # Trip Shapes must never add real-location readers.
+          if grep -R -E "getLastKnownLocation|getCurrentLocation|requestLocationUpdates|GnssMeasurementsEvent" \
+              android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/trip; then
+            echo "Unexpected real-location API in Trip Shapes engine."
+            exit 1
+          fi
+
+          echo "V9 verification passed."
+
+      - name: Commit V9 implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-studio-project/Mock-my-GPS/src/main
+          git add android-studio-project/Mock-my-GPS/src/test
+          git commit -m "feat: add 30 Trip Shapes"
+
+      - name: Upload V9 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-follow-real-movement-v9-trip-shapes-apks
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Push V9 implementation branch
+        run: |
+          git push --force-with-lease origin follow-real-movement-v9
+
+      - name: Upload V9 verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-real-movement-v9-trip-shapes-verification
+          path: |
+            red-v9.log
+            green-v9-tests.log
+            build-v9.log
+          if-no-files-found: warn
