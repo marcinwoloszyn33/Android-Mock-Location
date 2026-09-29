@@ -36,10 +36,13 @@ public final class TripPathGenerator {
 
     public static final int TYPE_COUNT = 30;
     public static final double DEFAULT_AMPLITUDE_METERS = 25d;
+    public static final double MAX_AMPLITUDE_METERS = 100000000d;
     public static final int DEFAULT_CYCLES = 3;
+    public static final int DEFAULT_WRAPS = 0;
+    public static final int MAX_ABS_WRAPS = 20;
 
     private static final double EARTH_RADIUS_METERS = 6371000d;
-    private static final double MIN_COS_LAT = 1e-6d;
+    private static final double EARTH_CIRCUMFERENCE_METERS = 2d * Math.PI * EARTH_RADIUS_METERS;
 
     private TripPathGenerator() {}
 
@@ -51,7 +54,7 @@ public final class TripPathGenerator {
     public static double sanitizeAmplitude(double meters) {
         if (Double.isNaN(meters) || Double.isInfinite(meters) || meters <= 0d)
             return DEFAULT_AMPLITUDE_METERS;
-        return Math.max(1d, Math.min(5000d, meters));
+        return Math.max(1d, Math.min(MAX_AMPLITUDE_METERS, meters));
     }
 
     public static int sanitizeCycles(int cycles) {
@@ -59,62 +62,97 @@ public final class TripPathGenerator {
         return Math.max(1, Math.min(20, cycles));
     }
 
-    public static LocPoint getPoint(
-        LocPoint origin,
-        LocPoint target,
-        int type,
-        double progress,
-        double amplitudeMeters,
-        int cycles
-    ) {
-        if (origin == null || target == null) return null;
-
-        double t = clamp01(progress);
-        if (t <= 0d) return new LocPoint(origin);
-        if (t >= 1d) return new LocPoint(target);
-
-        type = sanitizeType(type);
-        double a = sanitizeAmplitude(amplitudeMeters);
-        int c = sanitizeCycles(cycles);
-
-        double lat0 = Math.toRadians(origin.getLatitude());
-        double lat1 = Math.toRadians(target.getLatitude());
-        double midLat = (lat0 + lat1) * 0.5d;
-        double cosMidLat = Math.max(MIN_COS_LAT, Math.abs(Math.cos(midLat)));
-
-        double north = (lat1 - lat0) * EARTH_RADIUS_METERS;
-        double east = Math.toRadians(
-            wrapLongitudeDelta(target.getLongitude() - origin.getLongitude())
-        ) * EARTH_RADIUS_METERS * cosMidLat;
-
-        double distance = Math.hypot(east, north);
-        if (distance < 0.01d) {
-            east = 1d;
-            north = 0d;
-            distance = 1d;
-        }
-
-        double ux = east / distance;
-        double uy = north / distance;
-        double px = -uy;
-        double py = ux;
-
-        double[] local = localPoint(type, t, distance, a, c);
-        double along = local[0];
-        double side = local[1];
-
-        double eastOffset = (ux * along) + (px * side);
-        double northOffset = (uy * along) + (py * side);
-
-        double outLat = origin.getLatitude()
-            + Math.toDegrees(northOffset / EARTH_RADIUS_METERS);
-        double outLon = origin.getLongitude()
-            + Math.toDegrees(eastOffset / (EARTH_RADIUS_METERS * cosMidLat));
-
-        outLat = Math.max(-90d, Math.min(90d, outLat));
-        outLon = normalizeLongitude(outLon);
-        return new LocPoint(outLat, outLon);
+    public static int sanitizeWraps(int wraps) {
+        return Math.max(-MAX_ABS_WRAPS, Math.min(MAX_ABS_WRAPS, wraps));
     }
+
+    public static LocPoint getPoint(
+    LocPoint origin, LocPoint target, int type, double progress,
+    double amplitudeMeters, int cycles
+) {
+    return getPoint(origin,target,type,progress,amplitudeMeters,cycles,DEFAULT_WRAPS);
+}
+
+public static LocPoint getPoint(
+    LocPoint origin, LocPoint target, int type, double progress,
+    double amplitudeMeters, int cycles, int wraps
+) {
+    if (origin == null || target == null) return null;
+    double t = clamp01(progress);
+    if (t <= 0d) return new LocPoint(origin);
+    if (t >= 1d) return new LocPoint(target);
+
+    type = sanitizeType(type);
+    double amp = sanitizeAmplitude(amplitudeMeters);
+    int cyc = sanitizeCycles(cycles);
+    int wr = sanitizeWraps(wraps);
+
+    double baseDistance = greatCircleDistanceMeters(origin, target);
+    double bearing = (baseDistance < 0.01d) ? 90d : initialBearingDegrees(origin, target);
+    double total = baseDistance + ((double) wr * EARTH_CIRCUMFERENCE_METERS);
+    double baseAlong = total * t;
+    double[] local = localPoint(type, t, total, amp, cyc);
+    double alongDelta = local[0] - baseAlong;
+    double sideDelta = local[1];
+
+    LocPoint base = destinationPoint(origin, bearing, baseAlong);
+    double course = courseAtDistance(origin, bearing, baseAlong, total);
+    double offset = Math.hypot(alongDelta, sideDelta);
+    if (offset < 0.000001d) return base;
+    double offsetBearing = course + Math.toDegrees(Math.atan2(sideDelta, alongDelta));
+    return destinationPoint(base, offsetBearing, offset);
+}
+
+private static double greatCircleDistanceMeters(LocPoint a, LocPoint b) {
+    double lat1 = Math.toRadians(a.getLatitude());
+    double lat2 = Math.toRadians(b.getLatitude());
+    double dLat = lat2 - lat1;
+    double dLon = Math.toRadians(wrapLongitudeDelta(b.getLongitude() - a.getLongitude()));
+    double sl = Math.sin(dLat * 0.5d), so = Math.sin(dLon * 0.5d);
+    double h = (sl*sl) + Math.cos(lat1)*Math.cos(lat2)*so*so;
+    h = Math.max(0d, Math.min(1d, h));
+    return 2d * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(h));
+}
+
+private static double initialBearingDegrees(LocPoint from, LocPoint to) {
+    double lat1 = Math.toRadians(from.getLatitude());
+    double lat2 = Math.toRadians(to.getLatitude());
+    double dLon = Math.toRadians(wrapLongitudeDelta(to.getLongitude() - from.getLongitude()));
+    double y = Math.sin(dLon) * Math.cos(lat2);
+    double x = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+    if (Math.abs(x) < 1e-15d && Math.abs(y) < 1e-15d) return 90d;
+    return normalizeBearing(Math.toDegrees(Math.atan2(y, x)));
+}
+
+private static double courseAtDistance(LocPoint origin, double bearing, double distance, double total) {
+    double direction = (total < 0d) ? -1d : 1d;
+    if (Math.abs(total) < 0.01d) direction = 1d;
+    LocPoint here = destinationPoint(origin, bearing, distance);
+    LocPoint ahead = destinationPoint(origin, bearing, distance + direction*1000d);
+    return initialBearingDegrees(here, ahead);
+}
+
+private static LocPoint destinationPoint(LocPoint start, double bearingDegrees, double distanceMeters) {
+    double ad = distanceMeters / EARTH_RADIUS_METERS;
+    double br = Math.toRadians(bearingDegrees);
+    double lat1 = Math.toRadians(start.getLatitude());
+    double lon1 = Math.toRadians(start.getLongitude());
+    double sinLat1 = Math.sin(lat1), cosLat1 = Math.cos(lat1);
+    double sinD = Math.sin(ad), cosD = Math.cos(ad);
+    double sinLat2 = sinLat1*cosD + cosLat1*sinD*Math.cos(br);
+    sinLat2 = Math.max(-1d, Math.min(1d, sinLat2));
+    double lat2 = Math.asin(sinLat2);
+    double y = Math.sin(br)*sinD*cosLat1;
+    double x = cosD - sinLat1*Math.sin(lat2);
+    double lon2 = lon1 + Math.atan2(y,x);
+    return new LocPoint(Math.toDegrees(lat2), normalizeLongitude(Math.toDegrees(lon2)));
+}
+
+private static double normalizeBearing(double degrees) {
+    double v = degrees % 360d;
+    if (v < 0d) v += 360d;
+    return v;
+}
 
     private static double[] localPoint(int type, double t, double d, double a, int cycles) {
         double x = d * t;

@@ -42,6 +42,7 @@ public class LocationService extends Service {
     private final static String EXTRA_TRIP_PATH_TYPE = "TRIP_PATH_TYPE";
     private final static String EXTRA_TRIP_PATH_AMPLITUDE = "TRIP_PATH_AMPLITUDE";
     private final static String EXTRA_TRIP_PATH_CYCLES = "TRIP_PATH_CYCLES";
+    private final static String EXTRA_TRIP_PATH_WRAPS = "TRIP_PATH_WRAPS";
 
     private static boolean running = false;
     private static LocationThreadManager LTM = null;
@@ -286,7 +287,7 @@ public class LocationService extends Service {
         LocPoint target = new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude);
         if (remaining > 0L) {
             int seconds = TripProgress.secondsForRestore(remaining);
-            LTM.flyToLocation(target,seconds,TripPathPrefs.getType(LocationService.this),TripPathPrefs.getAmplitude(LocationService.this),TripPathPrefs.getCycles(LocationService.this));
+            LTM.flyToLocation(target,seconds,TripPathPrefs.getType(LocationService.this),TripPathPrefs.getAmplitude(LocationService.this),TripPathPrefs.getCycles(LocationService.this),TripPathPrefs.getWraps(LocationService.this));
         } else {
             LTM.jumpToLocation(target);
         }
@@ -313,6 +314,7 @@ public class LocationService extends Service {
             EXTRA_TRIP_PATH_CYCLES,
             TripPathGenerator.DEFAULT_CYCLES
         );
+        int trip_path_wraps = intent.getIntExtra(EXTRA_TRIP_PATH_WRAPS,TripPathGenerator.DEFAULT_WRAPS);
 
         if ((origin_lat > 1000) || (origin_lon > 1000))
             return null;
@@ -329,7 +331,8 @@ public class LocationService extends Service {
             trip_duration,
             trip_path_type,
             trip_path_amplitude,
-            trip_path_cycles
+            trip_path_cycles,
+            trip_path_wraps
         );
         return origin;
     }
@@ -416,7 +419,8 @@ private void cancelTripHeartbeat() {
         trip_duration,
         TripPathGenerator.TYPE_STRAIGHT,
         TripPathGenerator.DEFAULT_AMPLITUDE_METERS,
-        TripPathGenerator.DEFAULT_CYCLES
+        TripPathGenerator.DEFAULT_CYCLES,
+        TripPathGenerator.DEFAULT_WRAPS
     );
 }
 
@@ -428,7 +432,8 @@ public static Intent doStart(
     int trip_duration,
     int trip_path_type,
     double trip_path_amplitude,
-    int trip_path_cycles
+    int trip_path_cycles,
+    int trip_path_wraps
 ) {
     if (origin == null)
         return null;
@@ -441,7 +446,8 @@ public static Intent doStart(
         trip_duration,
         trip_path_type,
         trip_path_amplitude,
-        trip_path_cycles
+        trip_path_cycles,
+        trip_path_wraps
     );
     return doAction(context, intent, ACTION_START, broadcast);
 }
@@ -453,7 +459,8 @@ private static void addIntentExtras(
     int trip_duration,
     int trip_path_type,
     double trip_path_amplitude,
-    int trip_path_cycles
+    int trip_path_cycles,
+    int trip_path_wraps
 ) {
     boolean is_trip = (destination != null) && (trip_duration > 0);
 
@@ -476,6 +483,7 @@ private static void addIntentExtras(
             EXTRA_TRIP_PATH_CYCLES,
             TripPathGenerator.sanitizeCycles(trip_path_cycles)
         );
+        intent.putExtra(EXTRA_TRIP_PATH_WRAPS,TripPathGenerator.sanitizeWraps(trip_path_wraps));
     }
 }
 

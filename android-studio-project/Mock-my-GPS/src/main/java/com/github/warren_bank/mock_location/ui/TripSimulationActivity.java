@@ -32,6 +32,7 @@ implements RuntimePermissionsListener {
     private int originalPathType;
     private double originalPathAmplitude;
     private int originalPathCycles;
+    private int originalPathWraps;
 
     private TextView label_trip_origin;
     private TextView input_trip_origin;
@@ -41,6 +42,7 @@ implements RuntimePermissionsListener {
     private Spinner input_trip_path_type;
     private TextView input_trip_path_amplitude;
     private TextView input_trip_path_cycles;
+    private TextView input_trip_path_wraps;
     private Button button_toggle_state;
     private Button button_update;
 
@@ -61,6 +63,7 @@ implements RuntimePermissionsListener {
         input_trip_path_type = (Spinner) findViewById(R.id.input_trip_path_type);
         input_trip_path_amplitude = (TextView) findViewById(R.id.input_trip_path_amplitude);
         input_trip_path_cycles = (TextView) findViewById(R.id.input_trip_path_cycles);
+        input_trip_path_wraps = (TextView) findViewById(R.id.input_trip_path_wraps);
         button_toggle_state = (Button) findViewById(R.id.button_toggle_state);
         button_update = (Button) findViewById(R.id.button_update);
 
@@ -150,6 +153,13 @@ implements RuntimePermissionsListener {
             }
         });
 
+        input_trip_path_wraps.addTextChangedListener(new SimpleWatcher() {
+            public void afterTextChanged(Editable x) {
+                if (!LocationService.isTripModeStarted()) return;
+                try { int v=TripPathGenerator.sanitizeWraps(Integer.parseInt(x.toString(),10)); diff_fields=TripEditState.update(diff_fields,TripEditState.PATH_WRAPS_MASK,originalPathWraps!=v); checkDiff(); } catch(Exception e) {}
+            }
+        });
+
         input_trip_path_type.setOnItemSelectedListener(
             new AdapterView.OnItemSelectedListener() {
                 public void onItemSelected(
@@ -210,6 +220,7 @@ implements RuntimePermissionsListener {
         int pathType = TripPathPrefs.getType(this);
         double amplitude = TripPathPrefs.getAmplitude(this);
         int cycles = TripPathPrefs.getCycles(this);
+        int wraps = TripPathPrefs.getWraps(this);
 
         if (!LocationService.isTripModeStarted()) {
             originalLocOrigin = origin;
@@ -218,10 +229,11 @@ implements RuntimePermissionsListener {
             originalPathType = pathType;
             originalPathAmplitude = amplitude;
             originalPathCycles = cycles;
+            originalPathWraps = wraps;
             diff_fields = 0;
         }
 
-        reset(origin, destination, duration, pathType, amplitude, cycles);
+        reset(origin, destination, duration, pathType, amplitude, cycles, wraps);
     }
 
     private void loadOriginals() {
@@ -231,6 +243,7 @@ implements RuntimePermissionsListener {
         originalPathType = TripPathPrefs.getType(this);
         originalPathAmplitude = TripPathPrefs.getAmplitude(this);
         originalPathCycles = TripPathPrefs.getCycles(this);
+        originalPathWraps = TripPathPrefs.getWraps(this);
     }
 
     private void reset(
@@ -239,7 +252,8 @@ implements RuntimePermissionsListener {
         int duration,
         int pathType,
         double amplitude,
-        int cycles
+        int cycles,
+        int wraps
     ) {
         label_trip_origin.setVisibility(View.GONE);
         label_trip_destination.setVisibility(View.GONE);
@@ -261,6 +275,7 @@ implements RuntimePermissionsListener {
                 10
             )
         );
+        input_trip_path_wraps.setText(Integer.toString(TripPathGenerator.sanitizeWraps(wraps),10));
 
         BookmarkItem item = SharedPrefs.getBookmarkItem(this, origin);
         if (item != null) {
@@ -336,6 +351,7 @@ implements RuntimePermissionsListener {
                     10
                 )
             );
+            int wraps = TripPathGenerator.sanitizeWraps(Integer.parseInt(input_trip_path_wraps.getText().toString(),10));
 
             LocationService.doStart(
                 this,
@@ -345,13 +361,14 @@ implements RuntimePermissionsListener {
                 duration,
                 pathType,
                 amplitude,
-                cycles
+                cycles,
+                wraps
             );
 
             SharedPrefs.putTripOrigin(this, origin);
             SharedPrefs.putTripDestination(this, destination);
             SharedPrefs.putTripDuration(this, duration);
-            TripPathPrefs.save(this, pathType, amplitude, cycles);
+            TripPathPrefs.save(this, pathType, amplitude, cycles, wraps);
 
             originalLocOrigin = origin;
             originalLocDestination = destination;
@@ -359,6 +376,7 @@ implements RuntimePermissionsListener {
             originalPathType = pathType;
             originalPathAmplitude = amplitude;
             originalPathCycles = cycles;
+            originalPathWraps = wraps;
             diff_fields = 0;
 
             button_toggle_state.setText(R.string.label_button_stop);

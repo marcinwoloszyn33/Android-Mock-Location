@@ -131,8 +131,9 @@
 
     <!-- Trip Shapes V9 -->
     <string name="TripSimulationActivity_field_path">Path shape:</string>
-    <string name="TripSimulationActivity_field_amplitude">Size / width:\n<small>(meters)</small></string>
+    <string name="TripSimulationActivity_field_amplitude">Size / width:\n<small>(meters; max 100,000 km)</small></string>
     <string name="TripSimulationActivity_field_cycles">Turns / complexity:\n<small>(1–20)</small></string>
+    <string name="TripSimulationActivity_field_wraps">Global wraps:\n<small>(-20..20; 0 = off)</small></string>
 
     <string-array name="trip_path_type_labels">
         <item>Straight</item>

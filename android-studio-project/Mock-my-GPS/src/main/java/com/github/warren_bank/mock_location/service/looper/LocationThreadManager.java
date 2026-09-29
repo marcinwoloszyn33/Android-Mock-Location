@@ -41,6 +41,7 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     private int mTripPathType = TripPathGenerator.TYPE_STRAIGHT;
     private double mTripPathAmplitudeMeters = TripPathGenerator.DEFAULT_AMPLITUDE_METERS;
     private int mTripPathCycles = TripPathGenerator.DEFAULT_CYCLES;
+    private int mTripPathWraps = TripPathGenerator.DEFAULT_WRAPS;
     private long mTripStartElapsedMs = 0L;
     private long mTripDurationMs = 0L;
 
@@ -212,7 +213,7 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         mFixedCountRemaining = mFollowRealMovementEnabled ? 0 : ((mTripHoldDestination) ? mFixedCount : -1);
         return new LocPoint(mCurrentLocPoint);
     }
-    LocPoint shaped = TripPathGenerator.getPoint(mOriginLocPoint,mTargetLocPoint,mTripPathType,factor,mTripPathAmplitudeMeters,mTripPathCycles);
+    LocPoint shaped = TripPathGenerator.getPoint(mOriginLocPoint,mTargetLocPoint,mTripPathType,factor,mTripPathAmplitudeMeters,mTripPathCycles,mTripPathWraps);
     if (shaped != null) mCurrentLocPoint = shaped;
     return new LocPoint(mCurrentLocPoint);
 }
@@ -247,9 +248,9 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     }
 
     public void flyToLocation(LocPoint location, int seconds) {
-    flyToLocation(location, seconds, TripPathGenerator.TYPE_STRAIGHT, TripPathGenerator.DEFAULT_AMPLITUDE_METERS, TripPathGenerator.DEFAULT_CYCLES);
+    flyToLocation(location, seconds, TripPathGenerator.TYPE_STRAIGHT, TripPathGenerator.DEFAULT_AMPLITUDE_METERS, TripPathGenerator.DEFAULT_CYCLES, TripPathGenerator.DEFAULT_WRAPS);
 }
-public void flyToLocation(LocPoint location, int seconds, int type, double amplitude, int cycles) {
+public void flyToLocation(LocPoint location, int seconds, int type, double amplitude, int cycles, int wraps) {
     if (location == null) return;
     synchronized (mLock) {
         if (mIsStarted && mFixedJoystickEnabled) hideJoyStick();
@@ -258,6 +259,7 @@ public void flyToLocation(LocPoint location, int seconds, int type, double ampli
         mTripPathType = TripPathGenerator.sanitizeType(type);
         mTripPathAmplitudeMeters = TripPathGenerator.sanitizeAmplitude(amplitude);
         mTripPathCycles = TripPathGenerator.sanitizeCycles(cycles);
+        mTripPathWraps = TripPathGenerator.sanitizeWraps(wraps);
         mTripStartElapsedMs = SystemClock.elapsedRealtime();
         mTripDurationMs = TripTimeline.durationMillis(seconds);
         mIsFlyMode = true;
