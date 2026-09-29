@@ -1,0 +1,376 @@
+name: Build Follow Real Movement V12 Universal Global Trip
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout V10
+        uses: actions/checkout@v4
+        with:
+          ref: follow-real-movement-v10
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK 35
+        run: |
+          SDKMANAGER="/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Create V12 branch from V10
+        run: |
+          git fetch origin follow-real-movement-v10
+          git fetch origin follow-real-movement-v12:refs/remotes/origin/follow-real-movement-v12 || true
+          git checkout -B follow-real-movement-v12 origin/follow-real-movement-v10
+
+      - name: RED - add global Trip tests
+        run: |
+          mkdir -p android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/trip
+          cat > android-studio-project/Mock-my-GPS/src/test/java/com/github/warren_bank/mock_location/service/trip/GlobalTripGeometryTest.java <<'EOF'
+          package com.github.warren_bank.mock_location.service.trip;
+          import com.github.warren_bank.mock_location.data_model.LocPoint;
+          import org.junit.Test;
+          import static org.junit.Assert.*;
+
+          public class GlobalTripGeometryTest {
+              @Test public void acceptsGlobalSizes() {
+                  assertEquals(30000d, TripPathGenerator.sanitizeAmplitude(30000d), 0d);
+                  assertEquals(200000d, TripPathGenerator.sanitizeAmplitude(200000d), 0d);
+                  assertEquals(40075000d, TripPathGenerator.sanitizeAmplitude(40075000d), 0d);
+                  assertEquals(100000000d, TripPathGenerator.sanitizeAmplitude(100000000d), 0d);
+                  assertEquals(100000000d, TripPathGenerator.sanitizeAmplitude(250000000d), 0d);
+              }
+
+              @Test public void signedWrapsAreSupported() {
+                  assertEquals(0, TripPathGenerator.sanitizeWraps(0));
+                  assertEquals(1, TripPathGenerator.sanitizeWraps(1));
+                  assertEquals(-1, TripPathGenerator.sanitizeWraps(-1));
+                  assertEquals(20, TripPathGenerator.sanitizeWraps(999));
+                  assertEquals(-20, TripPathGenerator.sanitizeWraps(-999));
+              }
+
+              @Test public void straightCanCircleWorldWithoutNewShape() {
+                  LocPoint start = new LocPoint(0d, 0d);
+                  LocPoint q = TripPathGenerator.getPoint(start,start,TripPathGenerator.TYPE_STRAIGHT,0.25d,25d,1,1);
+                  LocPoint h = TripPathGenerator.getPoint(start,start,TripPathGenerator.TYPE_STRAIGHT,0.50d,25d,1,1);
+                  LocPoint w = TripPathGenerator.getPoint(start,start,TripPathGenerator.TYPE_STRAIGHT,0.25d,25d,1,-1);
+                  LocPoint f = TripPathGenerator.getPoint(start,start,TripPathGenerator.TYPE_STRAIGHT,1d,25d,1,1);
+                  assertEquals(90d, q.getLongitude(), 0.02d);
+                  assertTrue(Math.abs(Math.abs(h.getLongitude()) - 180d) < 0.02d);
+                  assertEquals(-90d, w.getLongitude(), 0.02d);
+                  assertEquals(0d, f.getLongitude(), 0d);
+              }
+
+              @Test public void hugeShapeAlwaysReturnsValidCoordinates() {
+                  LocPoint a = new LocPoint(52.2297d, 21.0122d);
+                  LocPoint b = new LocPoint(35.6762d, 139.6503d);
+                  for (int i=1; i<100; i++) {
+                      LocPoint p = TripPathGenerator.getPoint(a,b,TripPathGenerator.TYPE_FIGURE_EIGHT,i/100d,20000000d,3,1);
+                      assertNotNull(p);
+                      assertTrue(p.getLatitude() >= -90d && p.getLatitude() <= 90d);
+                      assertTrue(p.getLongitude() >= -180d && p.getLongitude() <= 180d);
+                  }
+              }
+          }
+          EOF
+
+      - name: RED - verify V10 lacks global geometry
+        run: |
+          cd android-studio-project
+          chmod +x gradlew
+          set +e
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace > ../red-v12.log 2>&1
+          STATUS=$?
+          set -e
+          test "$STATUS" -ne 0
+          grep -Eq "GlobalTripGeometryTest|sanitizeWraps|getPoint" ../red-v12.log
+
+      - name: GREEN - implement one universal global Trip
+        run: |
+          python3 - <<'PATCHPY'
+          from pathlib import Path
+          import re
+          R = Path("android-studio-project/Mock-my-GPS")
+
+          def rep(path, old, new, label):
+              s = path.read_text(encoding="utf-8")
+              if old not in s:
+                  raise SystemExit("Missing anchor: " + label)
+              path.write_text(s.replace(old,new,1), encoding="utf-8")
+
+          # Generator: same 30 shapes, 100,000 km Size, signed wraps, spherical geometry.
+          p = R / "src/main/java/com/github/warren_bank/mock_location/service/trip/TripPathGenerator.java"
+          s = p.read_text(encoding="utf-8")
+          s = s.replace(
+              "    public static final int TYPE_COUNT = 30;\n    public static final double DEFAULT_AMPLITUDE_METERS = 25d;\n    public static final int DEFAULT_CYCLES = 3;\n\n    private static final double EARTH_RADIUS_METERS = 6371000d;\n    private static final double MIN_COS_LAT = 1e-6d;\n",
+              "    public static final int TYPE_COUNT = 30;\n    public static final double DEFAULT_AMPLITUDE_METERS = 25d;\n    public static final double MAX_AMPLITUDE_METERS = 100000000d;\n    public static final int DEFAULT_CYCLES = 3;\n    public static final int DEFAULT_WRAPS = 0;\n    public static final int MAX_ABS_WRAPS = 20;\n\n    private static final double EARTH_RADIUS_METERS = 6371000d;\n    private static final double EARTH_CIRCUMFERENCE_METERS = 2d * Math.PI * EARTH_RADIUS_METERS;\n",
+              1
+          )
+          if "Math.min(5000d, meters)" not in s:
+              raise SystemExit("Old 5000m cap not found")
+          s = s.replace("Math.min(5000d, meters)", "Math.min(MAX_AMPLITUDE_METERS, meters)", 1)
+          cycles = "    public static int sanitizeCycles(int cycles) {\n        if (cycles <= 0) return DEFAULT_CYCLES;\n        return Math.max(1, Math.min(20, cycles));\n    }\n"
+          if cycles not in s: raise SystemExit("sanitizeCycles not found")
+          s = s.replace(cycles, cycles + "\n    public static int sanitizeWraps(int wraps) {\n        return Math.max(-MAX_ABS_WRAPS, Math.min(MAX_ABS_WRAPS, wraps));\n    }\n", 1)
+
+          a = s.index("    public static LocPoint getPoint(")
+          b = s.index("\n    private static double[] localPoint(", a)
+          new_method = r"""    public static LocPoint getPoint(
+              LocPoint origin, LocPoint target, int type, double progress,
+              double amplitudeMeters, int cycles
+          ) {
+              return getPoint(origin,target,type,progress,amplitudeMeters,cycles,DEFAULT_WRAPS);
+          }
+
+          public static LocPoint getPoint(
+              LocPoint origin, LocPoint target, int type, double progress,
+              double amplitudeMeters, int cycles, int wraps
+          ) {
+              if (origin == null || target == null) return null;
+              double t = clamp01(progress);
+              if (t <= 0d) return new LocPoint(origin);
+              if (t >= 1d) return new LocPoint(target);
+
+              type = sanitizeType(type);
+              double amp = sanitizeAmplitude(amplitudeMeters);
+              int cyc = sanitizeCycles(cycles);
+              int wr = sanitizeWraps(wraps);
+
+              double baseDistance = greatCircleDistanceMeters(origin, target);
+              double bearing = (baseDistance < 0.01d) ? 90d : initialBearingDegrees(origin, target);
+              double total = baseDistance + ((double) wr * EARTH_CIRCUMFERENCE_METERS);
+              double baseAlong = total * t;
+              double[] local = localPoint(type, t, total, amp, cyc);
+              double alongDelta = local[0] - baseAlong;
+              double sideDelta = local[1];
+
+              LocPoint base = destinationPoint(origin, bearing, baseAlong);
+              double course = courseAtDistance(origin, bearing, baseAlong, total);
+              double offset = Math.hypot(alongDelta, sideDelta);
+              if (offset < 0.000001d) return base;
+              double offsetBearing = course + Math.toDegrees(Math.atan2(sideDelta, alongDelta));
+              return destinationPoint(base, offsetBearing, offset);
+          }
+
+          private static double greatCircleDistanceMeters(LocPoint a, LocPoint b) {
+              double lat1 = Math.toRadians(a.getLatitude());
+              double lat2 = Math.toRadians(b.getLatitude());
+              double dLat = lat2 - lat1;
+              double dLon = Math.toRadians(wrapLongitudeDelta(b.getLongitude() - a.getLongitude()));
+              double sl = Math.sin(dLat * 0.5d), so = Math.sin(dLon * 0.5d);
+              double h = (sl*sl) + Math.cos(lat1)*Math.cos(lat2)*so*so;
+              h = Math.max(0d, Math.min(1d, h));
+              return 2d * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(h));
+          }
+
+          private static double initialBearingDegrees(LocPoint from, LocPoint to) {
+              double lat1 = Math.toRadians(from.getLatitude());
+              double lat2 = Math.toRadians(to.getLatitude());
+              double dLon = Math.toRadians(wrapLongitudeDelta(to.getLongitude() - from.getLongitude()));
+              double y = Math.sin(dLon) * Math.cos(lat2);
+              double x = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+              if (Math.abs(x) < 1e-15d && Math.abs(y) < 1e-15d) return 90d;
+              return normalizeBearing(Math.toDegrees(Math.atan2(y, x)));
+          }
+
+          private static double courseAtDistance(LocPoint origin, double bearing, double distance, double total) {
+              double direction = (total < 0d) ? -1d : 1d;
+              if (Math.abs(total) < 0.01d) direction = 1d;
+              LocPoint here = destinationPoint(origin, bearing, distance);
+              LocPoint ahead = destinationPoint(origin, bearing, distance + direction*1000d);
+              return initialBearingDegrees(here, ahead);
+          }
+
+          private static LocPoint destinationPoint(LocPoint start, double bearingDegrees, double distanceMeters) {
+              double ad = distanceMeters / EARTH_RADIUS_METERS;
+              double br = Math.toRadians(bearingDegrees);
+              double lat1 = Math.toRadians(start.getLatitude());
+              double lon1 = Math.toRadians(start.getLongitude());
+              double sinLat1 = Math.sin(lat1), cosLat1 = Math.cos(lat1);
+              double sinD = Math.sin(ad), cosD = Math.cos(ad);
+              double sinLat2 = sinLat1*cosD + cosLat1*sinD*Math.cos(br);
+              sinLat2 = Math.max(-1d, Math.min(1d, sinLat2));
+              double lat2 = Math.asin(sinLat2);
+              double y = Math.sin(br)*sinD*cosLat1;
+              double x = cosD - sinLat1*Math.sin(lat2);
+              double lon2 = lon1 + Math.atan2(y,x);
+              return new LocPoint(Math.toDegrees(lat2), normalizeLongitude(Math.toDegrees(lon2)));
+          }
+
+          private static double normalizeBearing(double degrees) {
+              double v = degrees % 360d;
+              if (v < 0d) v += 360d;
+              return v;
+          }
+          """
+          s = s[:a] + new_method + s[b:]
+          p.write_text(s, encoding="utf-8")
+
+          # Prefs
+          p = R / "src/main/java/com/github/warren_bank/mock_location/service/trip/TripPathPrefs.java"
+          p.write_text("""package com.github.warren_bank.mock_location.service.trip;\n\nimport com.github.warren_bank.mock_location.data_model.SharedPrefs;\nimport android.content.Context;\nimport android.content.SharedPreferences;\n\npublic final class TripPathPrefs {\n    private static final String KEY_TYPE = \"trip_shape_type_v9\";\n    private static final String KEY_AMPLITUDE = \"trip_shape_amplitude_v9\";\n    private static final String KEY_CYCLES = \"trip_shape_cycles_v9\";\n    private static final String KEY_WRAPS = \"trip_global_wraps_v12\";\n    private TripPathPrefs() {}\n    public static int getType(Context c) { return TripPathGenerator.sanitizeType(SharedPrefs.getSharedPreferences(c).getInt(KEY_TYPE,TripPathGenerator.TYPE_STRAIGHT)); }\n    public static double getAmplitude(Context c) { long b=SharedPrefs.getSharedPreferences(c).getLong(KEY_AMPLITUDE,Double.doubleToLongBits(TripPathGenerator.DEFAULT_AMPLITUDE_METERS)); return TripPathGenerator.sanitizeAmplitude(Double.longBitsToDouble(b)); }\n    public static int getCycles(Context c) { return TripPathGenerator.sanitizeCycles(SharedPrefs.getSharedPreferences(c).getInt(KEY_CYCLES,TripPathGenerator.DEFAULT_CYCLES)); }\n    public static int getWraps(Context c) { return TripPathGenerator.sanitizeWraps(SharedPrefs.getSharedPreferences(c).getInt(KEY_WRAPS,TripPathGenerator.DEFAULT_WRAPS)); }\n    public static void save(Context c,int type,double amplitude,int cycles,int wraps) { SharedPreferences.Editor e=SharedPrefs.getSharedPreferences(c).edit(); e.putInt(KEY_TYPE,TripPathGenerator.sanitizeType(type)); e.putLong(KEY_AMPLITUDE,Double.doubleToLongBits(TripPathGenerator.sanitizeAmplitude(amplitude))); e.putInt(KEY_CYCLES,TripPathGenerator.sanitizeCycles(cycles)); e.putInt(KEY_WRAPS,TripPathGenerator.sanitizeWraps(wraps)); e.commit(); }\n}\n""", encoding="utf-8")
+
+          # Edit state
+          p = R / "src/main/java/com/github/warren_bank/mock_location/ui/logic/TripEditState.java"
+          p.write_text("""package com.github.warren_bank.mock_location.ui.logic;\npublic final class TripEditState {\n public static final short ORIGIN_MASK=(1<<0), DESTINATION_MASK=(1<<1), DURATION_MASK=(1<<2), PATH_TYPE_MASK=(1<<3), PATH_AMPLITUDE_MASK=(1<<4), PATH_CYCLES_MASK=(1<<5), PATH_WRAPS_MASK=(1<<6);\n private TripEditState() {}\n public static short update(short d,short m,boolean c){return c?(short)(d|m):(short)(d&~m);}\n}\n""", encoding="utf-8")
+
+          # Layout
+          p = R / "src/main/res/layout/activity_trip_simulation.xml"
+          s = p.read_text(encoding="utf-8")
+          needle = """        <EditText\n            android:id=\"@+id/input_trip_path_cycles\"\n            android:layout_width=\"match_parent\"\n            android:layout_height=\"wrap_content\"\n            android:inputType=\"number\" />\n"""
+          insert = needle + """\n        <TextView\n            android:layout_width=\"match_parent\"\n            android:layout_height=\"wrap_content\"\n            android:text=\"@string/TripSimulationActivity_field_wraps\"\n            style=\"@style/input_label_textview\" />\n\n        <EditText\n            android:id=\"@+id/input_trip_path_wraps\"\n            android:layout_width=\"match_parent\"\n            android:layout_height=\"wrap_content\"\n            android:inputType=\"number|numberSigned\" />\n"""
+          if needle not in s: raise SystemExit("Layout cycles anchor missing")
+          p.write_text(s.replace(needle,insert,1), encoding="utf-8")
+
+          # Strings
+          p = R / "src/main/res/values/strings.xml"
+          s = p.read_text(encoding="utf-8")
+          s = s.replace('Size / width:\\n<small>(meters)</small>', 'Size / width:\\n<small>(meters; max 100,000 km)</small>', 1)
+          cyc = '<string name="TripSimulationActivity_field_cycles">Turns / complexity:\\n<small>(1–20)</small></string>'
+          if cyc not in s: raise SystemExit("Cycles label missing")
+          s = s.replace(cyc, cyc+'\n    <string name="TripSimulationActivity_field_wraps">Global wraps:\\n<small>(-20..20; 0 = off)</small></string>',1)
+          p.write_text(s, encoding="utf-8")
+
+          # Activity
+          p = R / "src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java"
+          s = p.read_text(encoding="utf-8")
+          changes = [
+            ("    private int originalPathCycles;\n","    private int originalPathCycles;\n    private int originalPathWraps;\n"),
+            ("    private TextView input_trip_path_cycles;\n","    private TextView input_trip_path_cycles;\n    private TextView input_trip_path_wraps;\n"),
+            ("        input_trip_path_cycles = (TextView) findViewById(R.id.input_trip_path_cycles);\n","        input_trip_path_cycles = (TextView) findViewById(R.id.input_trip_path_cycles);\n        input_trip_path_wraps = (TextView) findViewById(R.id.input_trip_path_wraps);\n"),
+            ("        int cycles = TripPathPrefs.getCycles(this);\n","        int cycles = TripPathPrefs.getCycles(this);\n        int wraps = TripPathPrefs.getWraps(this);\n"),
+            ("            originalPathCycles = cycles;\n            diff_fields = 0;\n","            originalPathCycles = cycles;\n            originalPathWraps = wraps;\n            diff_fields = 0;\n"),
+            ("        reset(origin, destination, duration, pathType, amplitude, cycles);\n","        reset(origin, destination, duration, pathType, amplitude, cycles, wraps);\n"),
+            ("        originalPathCycles = TripPathPrefs.getCycles(this);\n","        originalPathCycles = TripPathPrefs.getCycles(this);\n        originalPathWraps = TripPathPrefs.getWraps(this);\n"),
+            ("        double amplitude,\n        int cycles\n    ) {\n","        double amplitude,\n        int cycles,\n        int wraps\n    ) {\n"),
+            ("        input_trip_path_cycles.setText(\n            Integer.toString(\n                TripPathGenerator.sanitizeCycles(cycles),\n                10\n            )\n        );\n","        input_trip_path_cycles.setText(\n            Integer.toString(\n                TripPathGenerator.sanitizeCycles(cycles),\n                10\n            )\n        );\n        input_trip_path_wraps.setText(Integer.toString(TripPathGenerator.sanitizeWraps(wraps),10));\n"),
+            ("            TripPathPrefs.save(this, pathType, amplitude, cycles);\n","            TripPathPrefs.save(this, pathType, amplitude, cycles, wraps);\n"),
+            ("            originalPathCycles = cycles;\n            diff_fields = 0;\n","            originalPathCycles = cycles;\n            originalPathWraps = wraps;\n            diff_fields = 0;\n")
+          ]
+          for old,new in changes:
+              if old not in s: raise SystemExit("Activity anchor missing: "+old[:60])
+              s=s.replace(old,new,1)
+          parse_cycles = """            int cycles = TripPathGenerator.sanitizeCycles(\n                Integer.parseInt(\n                    input_trip_path_cycles.getText().toString(),\n                    10\n                )\n            );\n"""
+          if parse_cycles not in s: raise SystemExit("Activity parse cycles missing")
+          s=s.replace(parse_cycles, parse_cycles+"            int wraps = TripPathGenerator.sanitizeWraps(Integer.parseInt(input_trip_path_wraps.getText().toString(),10));\n",1)
+          service_call = """                pathType,\n                amplitude,\n                cycles\n            );\n"""
+          if service_call not in s: raise SystemExit("Activity service call missing")
+          s=s.replace(service_call,"""                pathType,\n                amplitude,\n                cycles,\n                wraps\n            );\n""",1)
+          watcher = """        input_trip_path_type.setOnItemSelectedListener(\n"""
+          if watcher not in s: raise SystemExit("Activity spinner anchor missing")
+          s=s.replace(watcher,"""        input_trip_path_wraps.addTextChangedListener(new SimpleWatcher() {\n            public void afterTextChanged(Editable x) {\n                if (!LocationService.isTripModeStarted()) return;\n                try { int v=TripPathGenerator.sanitizeWraps(Integer.parseInt(x.toString(),10)); diff_fields=TripEditState.update(diff_fields,TripEditState.PATH_WRAPS_MASK,originalPathWraps!=v); checkDiff(); } catch(Exception e) {}\n            }\n        });\n\n"""+watcher,1)
+          p.write_text(s, encoding="utf-8")
+
+          # Service
+          p = R / "src/main/java/com/github/warren_bank/mock_location/service/LocationService.java"
+          s = p.read_text(encoding="utf-8")
+          changes = [
+            ('    private final static String EXTRA_TRIP_PATH_CYCLES = "TRIP_PATH_CYCLES";\n','    private final static String EXTRA_TRIP_PATH_CYCLES = "TRIP_PATH_CYCLES";\n    private final static String EXTRA_TRIP_PATH_WRAPS = "TRIP_PATH_WRAPS";\n'),
+            ('LTM.flyToLocation(target,seconds,TripPathPrefs.getType(LocationService.this),TripPathPrefs.getAmplitude(LocationService.this),TripPathPrefs.getCycles(LocationService.this));','LTM.flyToLocation(target,seconds,TripPathPrefs.getType(LocationService.this),TripPathPrefs.getAmplitude(LocationService.this),TripPathPrefs.getCycles(LocationService.this),TripPathPrefs.getWraps(LocationService.this));'),
+            ('        TripPathGenerator.DEFAULT_AMPLITUDE_METERS,\n        TripPathGenerator.DEFAULT_CYCLES\n    );\n','        TripPathGenerator.DEFAULT_AMPLITUDE_METERS,\n        TripPathGenerator.DEFAULT_CYCLES,\n        TripPathGenerator.DEFAULT_WRAPS\n    );\n'),
+            ('    double trip_path_amplitude,\n    int trip_path_cycles\n) {\n','    double trip_path_amplitude,\n    int trip_path_cycles,\n    int trip_path_wraps\n) {\n'),
+            ('        trip_path_amplitude,\n        trip_path_cycles\n    );\n','        trip_path_amplitude,\n        trip_path_cycles,\n        trip_path_wraps\n    );\n')
+          ]
+          for old,new in changes:
+              if old not in s: raise SystemExit("Service anchor missing: "+old[:60])
+              s=s.replace(old,new,1)
+          cyc_read = """        int trip_path_cycles = intent.getIntExtra(\n            EXTRA_TRIP_PATH_CYCLES,\n            TripPathGenerator.DEFAULT_CYCLES\n        );\n"""
+          if cyc_read not in s: raise SystemExit("Service cycles read missing")
+          s=s.replace(cyc_read,cyc_read+"        int trip_path_wraps = intent.getIntExtra(EXTRA_TRIP_PATH_WRAPS,TripPathGenerator.DEFAULT_WRAPS);\n",1)
+          fly_call = """            trip_path_amplitude,\n            trip_path_cycles\n        );\n"""
+          if fly_call not in s: raise SystemExit("Service fly call missing")
+          s=s.replace(fly_call,"""            trip_path_amplitude,\n            trip_path_cycles,\n            trip_path_wraps\n        );\n""",1)
+          # addIntentExtras signature is the remaining same-shaped signature after doStart was patched
+          sig = """    double trip_path_amplitude,\n    int trip_path_cycles\n) {\n    boolean is_trip"""
+          if sig not in s: raise SystemExit("Service addIntentExtras signature missing")
+          s=s.replace(sig,"""    double trip_path_amplitude,\n    int trip_path_cycles,\n    int trip_path_wraps\n) {\n    boolean is_trip""",1)
+          put = """        intent.putExtra(\n            EXTRA_TRIP_PATH_CYCLES,\n            TripPathGenerator.sanitizeCycles(trip_path_cycles)\n        );\n"""
+          if put not in s: raise SystemExit("Service put cycles missing")
+          s=s.replace(put,put+"        intent.putExtra(EXTRA_TRIP_PATH_WRAPS,TripPathGenerator.sanitizeWraps(trip_path_wraps));\n",1)
+          p.write_text(s, encoding="utf-8")
+
+          # Manager
+          p = R / "src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java"
+          s = p.read_text(encoding="utf-8")
+          changes = [
+            ("    private int mTripPathCycles = TripPathGenerator.DEFAULT_CYCLES;\n","    private int mTripPathCycles = TripPathGenerator.DEFAULT_CYCLES;\n    private int mTripPathWraps = TripPathGenerator.DEFAULT_WRAPS;\n"),
+            ("LocPoint shaped = TripPathGenerator.getPoint(mOriginLocPoint,mTargetLocPoint,mTripPathType,factor,mTripPathAmplitudeMeters,mTripPathCycles);","LocPoint shaped = TripPathGenerator.getPoint(mOriginLocPoint,mTargetLocPoint,mTripPathType,factor,mTripPathAmplitudeMeters,mTripPathCycles,mTripPathWraps);"),
+            ("    flyToLocation(location, seconds, TripPathGenerator.TYPE_STRAIGHT, TripPathGenerator.DEFAULT_AMPLITUDE_METERS, TripPathGenerator.DEFAULT_CYCLES);\n","    flyToLocation(location, seconds, TripPathGenerator.TYPE_STRAIGHT, TripPathGenerator.DEFAULT_AMPLITUDE_METERS, TripPathGenerator.DEFAULT_CYCLES, TripPathGenerator.DEFAULT_WRAPS);\n"),
+            ("public void flyToLocation(LocPoint location, int seconds, int type, double amplitude, int cycles) {\n","public void flyToLocation(LocPoint location, int seconds, int type, double amplitude, int cycles, int wraps) {\n"),
+            ("        mTripPathCycles = TripPathGenerator.sanitizeCycles(cycles);\n","        mTripPathCycles = TripPathGenerator.sanitizeCycles(cycles);\n        mTripPathWraps = TripPathGenerator.sanitizeWraps(wraps);\n")
+          ]
+          for old,new in changes:
+              if old not in s: raise SystemExit("Manager anchor missing: "+old[:60])
+              s=s.replace(old,new,1)
+          p.write_text(s, encoding="utf-8")
+          PATCHPY
+
+      - name: GREEN - run full unit tests
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:testEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebugUnitTest --stacktrace | tee ../green-v12-tests.log
+
+      - name: Build V12 GMS and AOSP APKs
+        run: |
+          cd android-studio-project
+          ./gradlew :Mock-my-GPS:assembleEnglishWithGooglePlayServicesFusedLocationProviderWithBackupRestoreSAFDebug :Mock-my-GPS:assembleEnglishWithAospLocationProvidersWithBackupRestoreSAFDebug --stacktrace | tee ../build-v12.log
+
+      - name: Verify V12 and preserve V10 reliability
+        run: |
+          G="android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/trip/TripPathGenerator.java"
+          A="android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/ui/TripSimulationActivity.java"
+          S="android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/LocationService.java"
+          M="android-studio-project/Mock-my-GPS/src/main/java/com/github/warren_bank/mock_location/service/looper/LocationThreadManager.java"
+          grep -q "TYPE_COUNT = 30" "$G"
+          ! grep -q "TYPE_WORLD_LOOP" "$G"
+          grep -q "MAX_AMPLITUDE_METERS = 100000000d" "$G"
+          grep -q "sanitizeWraps" "$G"
+          grep -q "greatCircleDistanceMeters" "$G"
+          grep -q "input_trip_path_wraps" "$A"
+          grep -q "EXTRA_TRIP_PATH_WRAPS" "$S"
+          grep -q "mTripPathWraps" "$M"
+          grep -q "TripStartPermissionPolicy.shouldStartImmediately" "$A"
+          grep -q "TripTimeline.progress" "$M"
+          grep -q "ACTION_HEARTBEAT" "$S"
+          grep -q "setAndAllowWhileIdle" "$S"
+          echo "V12 universal global Trip verification passed."
+
+      - name: Commit V12
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android-studio-project/Mock-my-GPS/src/main android-studio-project/Mock-my-GPS/src/test
+          git commit -m "feat: make normal Trip work at global scale"
+
+      - name: Upload V12 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-my-gps-follow-real-movement-v12-universal-global-trip-apks
+          path: android-studio-project/Mock-my-GPS/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Push V12 branch
+        run: git push --force-with-lease origin follow-real-movement-v12
+
+      - name: Upload V12 verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: follow-real-movement-v12-universal-global-trip-verification
+          path: |
+            red-v12.log
+            green-v12-tests.log
+            build-v12.log
+          if-no-files-found: warn
