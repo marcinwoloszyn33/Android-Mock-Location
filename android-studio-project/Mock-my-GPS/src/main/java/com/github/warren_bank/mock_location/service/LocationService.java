@@ -43,6 +43,7 @@ public class LocationService extends Service {
     private final static String EXTRA_TRIP_PATH_AMPLITUDE = "TRIP_PATH_AMPLITUDE";
     private final static String EXTRA_TRIP_PATH_CYCLES = "TRIP_PATH_CYCLES";
     private final static String EXTRA_TRIP_PATH_WRAPS = "TRIP_PATH_WRAPS";
+    private final static String EXTRA_TRIP_WAYPOINTS = "TRIP_WAYPOINTS";
 
     private static boolean running = false;
     private static LocationThreadManager LTM = null;
@@ -287,7 +288,15 @@ public class LocationService extends Service {
         LocPoint target = new LocPoint(snapshot.tripTargetLatitude, snapshot.tripTargetLongitude);
         if (remaining > 0L) {
             int seconds = TripProgress.secondsForRestore(remaining);
-            LTM.flyToLocation(target,seconds,TripPathPrefs.getType(LocationService.this),TripPathPrefs.getAmplitude(LocationService.this),TripPathPrefs.getCycles(LocationService.this),TripPathPrefs.getWraps(LocationService.this));
+            LTM.flyToLocation(
+                target,
+                seconds,
+                TripPathPrefs.getType(LocationService.this),
+                TripPathPrefs.getAmplitude(LocationService.this),
+                TripPathPrefs.getCycles(LocationService.this),
+                TripPathPrefs.getWraps(LocationService.this),
+                snapshot.tripWaypoints
+            );
         } else {
             LTM.jumpToLocation(target);
         }
@@ -315,6 +324,8 @@ public class LocationService extends Service {
             TripPathGenerator.DEFAULT_CYCLES
         );
         int trip_path_wraps = intent.getIntExtra(EXTRA_TRIP_PATH_WRAPS,TripPathGenerator.DEFAULT_WRAPS);
+        String trip_waypoints = intent.getStringExtra(EXTRA_TRIP_WAYPOINTS);
+        if (trip_waypoints == null) trip_waypoints = "";
 
         if ((origin_lat > 1000) || (origin_lon > 1000))
             return null;
@@ -332,7 +343,8 @@ public class LocationService extends Service {
             trip_path_type,
             trip_path_amplitude,
             trip_path_cycles,
-            trip_path_wraps
+            trip_path_wraps,
+            trip_waypoints
         );
         return origin;
     }
@@ -420,7 +432,8 @@ private void cancelTripHeartbeat() {
         TripPathGenerator.TYPE_STRAIGHT,
         TripPathGenerator.DEFAULT_AMPLITUDE_METERS,
         TripPathGenerator.DEFAULT_CYCLES,
-        TripPathGenerator.DEFAULT_WRAPS
+        TripPathGenerator.DEFAULT_WRAPS,
+        ""
     );
 }
 
@@ -435,6 +448,32 @@ public static Intent doStart(
     int trip_path_cycles,
     int trip_path_wraps
 ) {
+    return doStart(
+        context,
+        broadcast,
+        origin,
+        destination,
+        trip_duration,
+        trip_path_type,
+        trip_path_amplitude,
+        trip_path_cycles,
+        trip_path_wraps,
+        ""
+    );
+}
+
+public static Intent doStart(
+    Context context,
+    boolean broadcast,
+    LocPoint origin,
+    LocPoint destination,
+    int trip_duration,
+    int trip_path_type,
+    double trip_path_amplitude,
+    int trip_path_cycles,
+    int trip_path_wraps,
+    String trip_waypoints
+) {
     if (origin == null)
         return null;
 
@@ -447,7 +486,8 @@ public static Intent doStart(
         trip_path_type,
         trip_path_amplitude,
         trip_path_cycles,
-        trip_path_wraps
+        trip_path_wraps,
+        trip_waypoints
     );
     return doAction(context, intent, ACTION_START, broadcast);
 }
@@ -460,7 +500,8 @@ private static void addIntentExtras(
     int trip_path_type,
     double trip_path_amplitude,
     int trip_path_cycles,
-    int trip_path_wraps
+    int trip_path_wraps,
+    String trip_waypoints
 ) {
     boolean is_trip = (destination != null) && (trip_duration > 0);
 
@@ -484,6 +525,7 @@ private static void addIntentExtras(
             TripPathGenerator.sanitizeCycles(trip_path_cycles)
         );
         intent.putExtra(EXTRA_TRIP_PATH_WRAPS,TripPathGenerator.sanitizeWraps(trip_path_wraps));
+        intent.putExtra(EXTRA_TRIP_WAYPOINTS, trip_waypoints == null ? "" : trip_waypoints);
     }
 }
 

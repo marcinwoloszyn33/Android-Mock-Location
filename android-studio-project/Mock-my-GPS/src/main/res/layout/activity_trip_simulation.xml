@@ -13,9 +13,7 @@
         android:fillViewport="true"
         android:layout_gravity="left"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_alignParentTop="true"
-        android:layout_alignParentStart="true">
+        android:layout_height="match_parent">
 
         <TextView
             android:layout_width="match_parent"
@@ -30,11 +28,46 @@
             android:layout_height="wrap_content"
             android:text="" />
 
-        <EditText
-            android:id="@+id/input_trip_origin"
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <EditText
+                android:id="@+id/input_trip_origin"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:inputType="number|textMultiLine" />
+
+            <Button
+                android:id="@+id/button_paste_trip_origin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_button_paste" />
+        </LinearLayout>
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="number|textMultiLine" />
+            android:text="@string/TripSimulationActivity_field_waypoints"
+            style="@style/input_label_textview" />
+
+        <EditText
+            android:id="@+id/input_trip_waypoints"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minLines="3"
+            android:maxLines="8"
+            android:gravity="top|start"
+            android:inputType="textMultiLine|textNoSuggestions"
+            android:hint="@string/TripSimulationActivity_waypoints_hint" />
+
+        <Button
+            android:id="@+id/button_paste_trip_waypoints"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/label_button_paste_waypoints" />
 
         <TextView
             android:layout_width="match_parent"
@@ -49,11 +82,24 @@
             android:layout_height="wrap_content"
             android:text="" />
 
-        <EditText
-            android:id="@+id/input_trip_destination"
+        <LinearLayout
+            android:orientation="horizontal"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="number|textMultiLine" />
+            android:layout_height="wrap_content">
+
+            <EditText
+                android:id="@+id/input_trip_destination"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:inputType="number|textMultiLine" />
+
+            <Button
+                android:id="@+id/button_paste_trip_destination"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_button_paste" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
@@ -138,8 +184,6 @@
                 android:layout_height="wrap_content"
                 android:padding="10dp"
                 android:text="@string/label_button_update" />
-
         </LinearLayout>
-
     </LinearLayout>
 </ScrollView>

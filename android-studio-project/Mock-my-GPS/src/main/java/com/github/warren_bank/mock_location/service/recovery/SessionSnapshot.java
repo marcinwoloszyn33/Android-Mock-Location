@@ -16,16 +16,21 @@ public final class SessionSnapshot {
     public final double tripTargetLongitude;
     public final long tripRemainingMs;
     public final long tripEndWallClockMs;
+    public final String tripWaypoints;
+
     public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive) {
         this(active,latitude,longitude,follow,step,keepAlive,follow ? MODE_FOLLOW_REAL_MOVEMENT : MODE_FIXED);
     }
     public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode) {
-        this(active,latitude,longitude,follow,step,keepAlive,mode,0d,0d,0L,0L);
+        this(active,latitude,longitude,follow,step,keepAlive,mode,0d,0d,0L,0L,"");
     }
     public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode,double targetLat,double targetLon,long remaining) {
-        this(active,latitude,longitude,follow,step,keepAlive,mode,targetLat,targetLon,remaining,0L);
+        this(active,latitude,longitude,follow,step,keepAlive,mode,targetLat,targetLon,remaining,0L,"");
     }
     public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode,double targetLat,double targetLon,long remaining,long endWall) {
+        this(active,latitude,longitude,follow,step,keepAlive,mode,targetLat,targetLon,remaining,endWall,"");
+    }
+    public SessionSnapshot(boolean active,double latitude,double longitude,boolean follow,double step,boolean keepAlive,String mode,double targetLat,double targetLon,long remaining,long endWall,String waypoints) {
         boolean valid = valid(latitude, longitude);
         this.active = active && valid;
         this.latitude = valid ? latitude : 0d;
@@ -39,6 +44,7 @@ public final class SessionSnapshot {
         this.tripTargetLongitude = trip ? targetLon : 0d;
         this.tripRemainingMs = trip ? Math.max(0L, remaining) : 0L;
         this.tripEndWallClockMs = trip ? Math.max(0L, endWall) : 0L;
+        this.tripWaypoints = trip && waypoints != null ? waypoints.trim() : "";
     }
     public boolean hasTripRoute() {
         return active && MODE_TRIP.equals(mode) && valid(tripTargetLatitude,tripTargetLongitude) && (tripRemainingMs > 0L || tripEndWallClockMs > 0L);
@@ -47,9 +53,7 @@ public final class SessionSnapshot {
         if (!hasTripRoute()) return 0L;
         return tripEndWallClockMs > 0L ? Math.max(0L, tripEndWallClockMs - nowWall) : Math.max(0L, tripRemainingMs);
     }
-    public boolean hasResumableTrip() {
-        return hasTripRoute() && remainingTripMs(System.currentTimeMillis()) > 0L;
-    }
+    public boolean hasResumableTrip() { return hasTripRoute() && remainingTripMs(System.currentTimeMillis()) > 0L; }
     public static SessionSnapshot inactive() { return new SessionSnapshot(false,0d,0d,false,DEFAULT_STEP_LENGTH_METERS,false,MODE_FIXED); }
     public String toJson() { return new Gson().toJson(this); }
     public static SessionSnapshot fromJson(String json) {
@@ -57,11 +61,11 @@ public final class SessionSnapshot {
         try {
             RawSnapshot r = new Gson().fromJson(json, RawSnapshot.class);
             if (r == null) return inactive();
-            return new SessionSnapshot(r.active,r.latitude,r.longitude,r.followRealMovement,r.stepLengthMeters,r.aggressiveKeepAlive,r.mode,r.tripTargetLatitude,r.tripTargetLongitude,r.tripRemainingMs,r.tripEndWallClockMs);
+            return new SessionSnapshot(r.active,r.latitude,r.longitude,r.followRealMovement,r.stepLengthMeters,r.aggressiveKeepAlive,r.mode,r.tripTargetLatitude,r.tripTargetLongitude,r.tripRemainingMs,r.tripEndWallClockMs,r.tripWaypoints);
         } catch (Exception e) { return inactive(); }
     }
     private static final class RawSnapshot {
-        boolean active; double latitude; double longitude; boolean followRealMovement; double stepLengthMeters; boolean aggressiveKeepAlive; String mode; double tripTargetLatitude; double tripTargetLongitude; long tripRemainingMs; long tripEndWallClockMs;
+        boolean active; double latitude; double longitude; boolean followRealMovement; double stepLengthMeters; boolean aggressiveKeepAlive; String mode; double tripTargetLatitude; double tripTargetLongitude; long tripRemainingMs; long tripEndWallClockMs; String tripWaypoints;
     }
     private static String sanitizeMode(boolean active, boolean follow, String mode) {
         if (!active) return MODE_FIXED;

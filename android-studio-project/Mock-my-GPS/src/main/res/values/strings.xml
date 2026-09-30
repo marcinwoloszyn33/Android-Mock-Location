@@ -50,6 +50,8 @@
     <string name="TripSimulationActivity_field_1">&origin;:\n<small>(&lat_lon;)</small></string>
     <string name="TripSimulationActivity_field_2">&destination;:\n<small>(&lat_lon;)</small></string>
     <string name="TripSimulationActivity_field_3">Duration:\n<small>(seconds)</small></string>
+    <string name="TripSimulationActivity_field_waypoints">Waypoints:\n<small>(optional; one latitude, longitude pair per line)</small></string>
+    <string name="TripSimulationActivity_waypoints_hint">52.0, 20.0\n53.0, 21.0</string>
 
     <!-- BookmarksActivity ================================================= -->
 
@@ -96,6 +98,8 @@
     <string name="label_button_cancel">CANCEL</string>
     <string name="label_button_delete">DELETE</string>
     <string name="label_button_save">SAVE</string>
+    <string name="label_button_paste">PASTE</string>
+    <string name="label_button_paste_waypoints">PASTE WAYPOINTS</string>
 
     <!-- shared preferences -->
     <string translatable="false" name="prefs_filename">PREFS</string>

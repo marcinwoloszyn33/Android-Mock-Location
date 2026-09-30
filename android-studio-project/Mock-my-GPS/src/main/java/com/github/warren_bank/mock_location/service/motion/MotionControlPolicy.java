@@ -32,6 +32,6 @@ public final class MotionControlPolicy {
         boolean joystickEnabled,
         boolean overlayPermissionGranted
     ) {
-        return started && !flyMode && joystickEnabled && overlayPermissionGranted;
+        return started && joystickEnabled && overlayPermissionGranted;
     }
 }

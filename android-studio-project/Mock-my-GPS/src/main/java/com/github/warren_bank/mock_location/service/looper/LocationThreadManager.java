@@ -16,6 +16,8 @@ import com.github.warren_bank.mock_location.service.recovery.SessionSnapshot;
 import com.github.warren_bank.mock_location.service.recovery.TripProgress;
 import com.github.warren_bank.mock_location.service.recovery.TripTimeline;
 import com.github.warren_bank.mock_location.service.trip.TripPathGenerator;
+import com.github.warren_bank.mock_location.service.trip.TripRoutePlan;
+import com.github.warren_bank.mock_location.service.trip.TripWaypointCodec;
 import com.github.warren_bank.mock_location.ui.components.JoyStickView;
 
 import android.content.Context;
@@ -42,6 +44,7 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     private double mTripPathAmplitudeMeters = TripPathGenerator.DEFAULT_AMPLITUDE_METERS;
     private int mTripPathCycles = TripPathGenerator.DEFAULT_CYCLES;
     private int mTripPathWraps = TripPathGenerator.DEFAULT_WRAPS;
+    private String mTripWaypointsText = "";
     private long mTripStartElapsedMs = 0L;
     private long mTripDurationMs = 0L;
 
@@ -213,7 +216,16 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
         mFixedCountRemaining = mFollowRealMovementEnabled ? 0 : ((mTripHoldDestination) ? mFixedCount : -1);
         return new LocPoint(mCurrentLocPoint);
     }
-    LocPoint shaped = TripPathGenerator.getPoint(mOriginLocPoint,mTargetLocPoint,mTripPathType,factor,mTripPathAmplitudeMeters,mTripPathCycles,mTripPathWraps);
+    LocPoint shaped = TripRoutePlan.getPoint(
+        mOriginLocPoint,
+        mTargetLocPoint,
+        mTripWaypointsText,
+        mTripPathType,
+        factor,
+        mTripPathAmplitudeMeters,
+        mTripPathCycles,
+        mTripPathWraps
+    );
     if (shaped != null) mCurrentLocPoint = shaped;
     return new LocPoint(mCurrentLocPoint);
 }
@@ -248,28 +260,56 @@ public class LocationThreadManager implements IJoyStickPresenter, ISharedPrefsLi
     }
 
     public void flyToLocation(LocPoint location, int seconds) {
-    flyToLocation(location, seconds, TripPathGenerator.TYPE_STRAIGHT, TripPathGenerator.DEFAULT_AMPLITUDE_METERS, TripPathGenerator.DEFAULT_CYCLES, TripPathGenerator.DEFAULT_WRAPS);
-}
-public void flyToLocation(LocPoint location, int seconds, int type, double amplitude, int cycles, int wraps) {
-    if (location == null) return;
-    synchronized (mLock) {
-        if (mIsStarted && mFixedJoystickEnabled) hideJoyStick();
-        mOriginLocPoint = new LocPoint(mCurrentLocPoint);
-        mTargetLocPoint = new LocPoint(location);
-        mTripPathType = TripPathGenerator.sanitizeType(type);
-        mTripPathAmplitudeMeters = TripPathGenerator.sanitizeAmplitude(amplitude);
-        mTripPathCycles = TripPathGenerator.sanitizeCycles(cycles);
-        mTripPathWraps = TripPathGenerator.sanitizeWraps(wraps);
-        mTripStartElapsedMs = SystemClock.elapsedRealtime();
-        mTripDurationMs = TripTimeline.durationMillis(seconds);
-        mIsFlyMode = true;
-        mFlyTimeIndex = 0;
-        mFlyTime = 0;
-        mCurrentSpeedMps = 0f;
+        flyToLocation(
+            location,
+            seconds,
+            TripPathGenerator.TYPE_STRAIGHT,
+            TripPathGenerator.DEFAULT_AMPLITUDE_METERS,
+            TripPathGenerator.DEFAULT_CYCLES,
+            TripPathGenerator.DEFAULT_WRAPS,
+            ""
+        );
     }
-    updateMotionAndJoystickState();
-    persistSessionMaybe(SystemClock.elapsedRealtime(), true);
-}
+
+    public void flyToLocation(
+        LocPoint location,
+        int seconds,
+        int type,
+        double amplitude,
+        int cycles,
+        int wraps
+    ) {
+        flyToLocation(location, seconds, type, amplitude, cycles, wraps, "");
+    }
+
+    public void flyToLocation(
+        LocPoint location,
+        int seconds,
+        int type,
+        double amplitude,
+        int cycles,
+        int wraps,
+        String waypoints
+    ) {
+        if (location == null) return;
+        synchronized (mLock) {
+            mOriginLocPoint = new LocPoint(mCurrentLocPoint);
+            mTargetLocPoint = new LocPoint(location);
+            mTripPathType = TripPathGenerator.sanitizeType(type);
+            mTripPathAmplitudeMeters = TripPathGenerator.sanitizeAmplitude(amplitude);
+            mTripPathCycles = TripPathGenerator.sanitizeCycles(cycles);
+            mTripPathWraps = TripPathGenerator.sanitizeWraps(wraps);
+            mTripWaypointsText = TripWaypointCodec.normalize(waypoints);
+            mTripStartElapsedMs = SystemClock.elapsedRealtime();
+            mTripDurationMs = TripTimeline.durationMillis(seconds);
+            mIsFlyMode = true;
+            mFlyTimeIndex = 0;
+            mFlyTime = 0;
+            mCurrentSpeedMps = 0f;
+        }
+        updateMotionAndJoystickState();
+        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+    }
 
     public boolean isFlyMode() {
         synchronized (mLock) {
@@ -282,6 +322,7 @@ public void flyToLocation(LocPoint location, int seconds, int type, double ampli
             mIsFlyMode = false;
             mTripStartElapsedMs = 0L;
             mTripDurationMs = 0L;
+            mTripWaypointsText = "";
             mCurrentSpeedMps = 0f;
         }
     }
@@ -321,42 +362,71 @@ public void flyToLocation(LocPoint location, int seconds, int type, double ampli
 
     @Override
     public void onArrowUpClick() {
+        long now = SystemClock.elapsedRealtime();
         synchronized (mLock) {
             if (mCurrentLocPoint == null) return;
-            mCurrentLocPoint.setLatitude(mCurrentLocPoint.getLatitude() + mFixedJoystickIncrement);
+            mCurrentLocPoint.setLatitude(Math.min(90d, mCurrentLocPoint.getLatitude() + mFixedJoystickIncrement));
             mCurrentSpeedMps = 0f;
+            rebaseTripAfterJoystickLocked(now);
         }
-        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+        persistSessionMaybe(now, true);
     }
 
     @Override
     public void onArrowDownClick() {
+        long now = SystemClock.elapsedRealtime();
         synchronized (mLock) {
             if (mCurrentLocPoint == null) return;
-            mCurrentLocPoint.setLatitude(mCurrentLocPoint.getLatitude() - mFixedJoystickIncrement);
+            mCurrentLocPoint.setLatitude(Math.max(-90d, mCurrentLocPoint.getLatitude() - mFixedJoystickIncrement));
             mCurrentSpeedMps = 0f;
+            rebaseTripAfterJoystickLocked(now);
         }
-        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+        persistSessionMaybe(now, true);
     }
 
     @Override
     public void onArrowLeftClick() {
+        long now = SystemClock.elapsedRealtime();
         synchronized (mLock) {
             if (mCurrentLocPoint == null) return;
-            mCurrentLocPoint.setLongitude(mCurrentLocPoint.getLongitude() - mFixedJoystickIncrement);
+            mCurrentLocPoint.setLongitude(normalizeLongitude(mCurrentLocPoint.getLongitude() - mFixedJoystickIncrement));
             mCurrentSpeedMps = 0f;
+            rebaseTripAfterJoystickLocked(now);
         }
-        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+        persistSessionMaybe(now, true);
     }
 
     @Override
     public void onArrowRightClick() {
+        long now = SystemClock.elapsedRealtime();
         synchronized (mLock) {
             if (mCurrentLocPoint == null) return;
-            mCurrentLocPoint.setLongitude(mCurrentLocPoint.getLongitude() + mFixedJoystickIncrement);
+            mCurrentLocPoint.setLongitude(normalizeLongitude(mCurrentLocPoint.getLongitude() + mFixedJoystickIncrement));
             mCurrentSpeedMps = 0f;
+            rebaseTripAfterJoystickLocked(now);
         }
-        persistSessionMaybe(SystemClock.elapsedRealtime(), true);
+        persistSessionMaybe(now, true);
+    }
+
+    private void rebaseTripAfterJoystickLocked(long nowMs) {
+        if (!mIsFlyMode || mCurrentLocPoint == null || mOriginLocPoint == null || mTargetLocPoint == null) return;
+
+        double factor = TripTimeline.progress(mTripStartElapsedMs, mTripDurationMs, nowMs);
+        long remaining = TripTimeline.remainingMillis(mTripStartElapsedMs, mTripDurationMs, nowMs);
+        mTripWaypointsText = TripRoutePlan.remainingWaypointsText(
+            mOriginLocPoint,
+            mTargetLocPoint,
+            mTripWaypointsText,
+            factor,
+            mTripPathWraps
+        );
+
+        // Manual control becomes the new origin for the remaining Trip.
+        // A partially completed global wrap is not repeated after manual intervention.
+        mOriginLocPoint = new LocPoint(mCurrentLocPoint);
+        mTripPathWraps = 0;
+        mTripStartElapsedMs = nowMs;
+        mTripDurationMs = Math.max(1000L, remaining);
     }
 
     @Override
@@ -549,13 +619,35 @@ public void flyToLocation(LocPoint location, int seconds, int type, double ampli
         String mode = mIsFlyMode ? SessionSnapshot.MODE_TRIP : (mFollowRealMovementEnabled ? SessionSnapshot.MODE_FOLLOW_REAL_MOVEMENT : SessionSnapshot.MODE_FIXED);
         double targetLat = 0d, targetLon = 0d;
         long remaining = 0L, endWall = 0L;
+        String remainingWaypoints = "";
         if (mIsFlyMode && mTargetLocPoint != null) {
             targetLat = mTargetLocPoint.getLatitude();
             targetLon = mTargetLocPoint.getLongitude();
             remaining = TripTimeline.remainingMillis(mTripStartElapsedMs, mTripDurationMs, nowMs);
             endWall = TripTimeline.wallClockEnd(System.currentTimeMillis(), remaining);
+            double factor = TripTimeline.progress(mTripStartElapsedMs, mTripDurationMs, nowMs);
+            remainingWaypoints = TripRoutePlan.remainingWaypointsText(
+                mOriginLocPoint,
+                mTargetLocPoint,
+                mTripWaypointsText,
+                factor,
+                mTripPathWraps
+            );
         }
-        snapshot = new SessionSnapshot(true,mCurrentLocPoint.getLatitude(),mCurrentLocPoint.getLongitude(),mFollowRealMovementEnabled,mStepLengthMeters,mAggressiveKeepAlive,mode,targetLat,targetLon,remaining,endWall);
+        snapshot = new SessionSnapshot(
+            true,
+            mCurrentLocPoint.getLatitude(),
+            mCurrentLocPoint.getLongitude(),
+            mFollowRealMovementEnabled,
+            mStepLengthMeters,
+            mAggressiveKeepAlive,
+            mode,
+            targetLat,
+            targetLon,
+            remaining,
+            endWall,
+            remainingWaypoints
+        );
     }
     MockSessionState.save(mContext, snapshot);
 }
@@ -578,6 +670,13 @@ public void flyToLocation(LocPoint location, int seconds, int type, double ampli
         float normalized = bearing % 360f;
         if (normalized < 0f) normalized += 360f;
         return normalized;
+    }
+
+    private static double normalizeLongitude(double longitude) {
+        double value = longitude % 360d;
+        if (value > 180d) value -= 360d;
+        if (value < -180d) value += 360d;
+        return value;
     }
 
     private void updateFlyTime(int new_time_interval) {
