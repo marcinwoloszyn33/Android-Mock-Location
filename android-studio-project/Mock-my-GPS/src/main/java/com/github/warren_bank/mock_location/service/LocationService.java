@@ -30,6 +30,7 @@ import android.widget.RemoteViews;
 public class LocationService extends Service {
     private final static int NOTIFICATION_ID          = 1;
     private final static String ACTION_START          = "START";
+    private final static String ACTION_UPDATE_TRIP    = "UPDATE_TRIP";
     private final static String ACTION_STOP           = "STOP";
     private final static String ACTION_PREFS          = "SHARED_PREFS_CHANGE";
     private final static String ACTION_HEARTBEAT      = "LONG_TRIP_HEARTBEAT";
@@ -244,6 +245,14 @@ public class LocationService extends Service {
                 break;
             }
 
+            case ACTION_UPDATE_TRIP: {
+                if (running && LTM != null && LTM.isStarted() && processTripUpdateExtras(intent)) {
+                    refreshWakeLock();
+                    if (LTM.isFlyMode()) scheduleTripHeartbeat(); else cancelTripHeartbeat();
+                }
+                break;
+            }
+
             case ACTION_STOP: {
                 running = false;
                 cancelTripHeartbeat();
@@ -347,6 +356,22 @@ public class LocationService extends Service {
             trip_waypoints
         );
         return origin;
+    }
+
+    private boolean processTripUpdateExtras(Intent intent) {
+        double destination_lat = intent.getDoubleExtra(EXTRA_DESTINATION_LAT, 2000.0);
+        double destination_lon = intent.getDoubleExtra(EXTRA_DESTINATION_LON, 2000.0);
+        int trip_duration = intent.getIntExtra(EXTRA_TRIP_DURATION, 0);
+        int trip_path_type = intent.getIntExtra(EXTRA_TRIP_PATH_TYPE, TripPathGenerator.TYPE_STRAIGHT);
+        double trip_path_amplitude = intent.getDoubleExtra(EXTRA_TRIP_PATH_AMPLITUDE, TripPathGenerator.DEFAULT_AMPLITUDE_METERS);
+        int trip_path_cycles = intent.getIntExtra(EXTRA_TRIP_PATH_CYCLES, TripPathGenerator.DEFAULT_CYCLES);
+        int trip_path_wraps = intent.getIntExtra(EXTRA_TRIP_PATH_WRAPS, TripPathGenerator.DEFAULT_WRAPS);
+        String trip_waypoints = intent.getStringExtra(EXTRA_TRIP_WAYPOINTS);
+        if (trip_waypoints == null) trip_waypoints = "";
+        if ((destination_lat > 1000) || (destination_lon > 1000) || (trip_duration <= 0)) return false;
+        LTM.flyToLocation(new LocPoint(destination_lat, destination_lon), trip_duration,
+            trip_path_type, trip_path_amplitude, trip_path_cycles, trip_path_wraps, trip_waypoints);
+        return true;
     }
 
     private void refreshWakeLock() {
@@ -528,6 +553,22 @@ private static void addIntentExtras(
         intent.putExtra(EXTRA_TRIP_WAYPOINTS, trip_waypoints == null ? "" : trip_waypoints);
     }
 }
+
+    public static Intent doUpdateTrip(Context context, boolean broadcast, LocPoint destination,
+        int trip_duration, int trip_path_type, double trip_path_amplitude,
+        int trip_path_cycles, int trip_path_wraps, String trip_waypoints) {
+        if (!running || destination == null || trip_duration <= 0) return null;
+        Intent intent = new Intent(context, LocationService.class);
+        intent.putExtra(EXTRA_DESTINATION_LAT, destination.getLatitude());
+        intent.putExtra(EXTRA_DESTINATION_LON, destination.getLongitude());
+        intent.putExtra(EXTRA_TRIP_DURATION, trip_duration);
+        intent.putExtra(EXTRA_TRIP_PATH_TYPE, TripPathGenerator.sanitizeType(trip_path_type));
+        intent.putExtra(EXTRA_TRIP_PATH_AMPLITUDE, TripPathGenerator.sanitizeAmplitude(trip_path_amplitude));
+        intent.putExtra(EXTRA_TRIP_PATH_CYCLES, TripPathGenerator.sanitizeCycles(trip_path_cycles));
+        intent.putExtra(EXTRA_TRIP_PATH_WRAPS, TripPathGenerator.sanitizeWraps(trip_path_wraps));
+        intent.putExtra(EXTRA_TRIP_WAYPOINTS, trip_waypoints == null ? "" : trip_waypoints);
+        return doAction(context, intent, ACTION_UPDATE_TRIP, broadcast);
+    }
 
     public static Intent doStop(Context context, boolean broadcast) {
         if (!running) return null;

@@ -20,7 +20,7 @@ public final class TripWaypointCodec {
         ArrayList<LocPoint> result = new ArrayList<LocPoint>();
         if (text == null || text.trim().isEmpty()) return result;
 
-        String normalized = text
+        String normalized = cleanupNumericWhitespace(text)
             .replace("%2C", ",")
             .replace("%2c", ",")
             .replace("%20", " ");
@@ -70,6 +70,11 @@ public final class TripWaypointCodec {
             count++;
         }
         return out.toString();
+    }
+
+    public static String cleanupNumericWhitespace(String text) {
+        if (text == null) return "";
+        return text.replaceAll("(?<=\\d)\\.\\s+(?=\\d)", ".");
     }
 
     private static boolean isValid(double lat, double lon) {

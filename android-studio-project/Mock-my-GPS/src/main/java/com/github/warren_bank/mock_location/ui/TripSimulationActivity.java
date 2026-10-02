@@ -6,17 +6,15 @@ import com.github.warren_bank.mock_location.data_model.LocPoint;
 import com.github.warren_bank.mock_location.data_model.SharedPrefs;
 import com.github.warren_bank.mock_location.security_model.RuntimePermissions;
 import com.github.warren_bank.mock_location.service.LocationService;
+import com.github.warren_bank.mock_location.service.trip.TripDraftPrefs;
 import com.github.warren_bank.mock_location.service.trip.TripPathGenerator;
 import com.github.warren_bank.mock_location.service.trip.TripPathPrefs;
 import com.github.warren_bank.mock_location.service.trip.TripWaypointCodec;
-import com.github.warren_bank.mock_location.ui.logic.TripEditState;
-import com.github.warren_bank.mock_location.ui.logic.TripStartPermissionPolicy;
 import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsListener;
 import com.github.warren_bank.mock_location.ui.interfaces.RuntimePermissionsRequester;
+import com.github.warren_bank.mock_location.ui.logic.TripStartPermissionPolicy;
 
 import android.app.Activity;
-import android.content.ClipboardManager;
-import android.content.Context;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -27,17 +25,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class TripSimulationActivity extends Activity
-implements RuntimePermissionsListener {
-    private LocPoint originalLocOrigin;
-    private LocPoint originalLocDestination;
-    private int originalTripDuration;
-    private int originalPathType;
-    private double originalPathAmplitude;
-    private int originalPathCycles;
-    private int originalPathWraps;
-    private String originalWaypointsText;
-
+public class TripSimulationActivity extends Activity implements RuntimePermissionsListener {
     private TextView label_trip_origin;
     private TextView input_trip_origin;
     private TextView input_trip_waypoints;
@@ -48,20 +36,15 @@ implements RuntimePermissionsListener {
     private TextView input_trip_path_amplitude;
     private TextView input_trip_path_cycles;
     private TextView input_trip_path_wraps;
-    private Button button_paste_trip_origin;
-    private Button button_paste_trip_waypoints;
-    private Button button_paste_trip_destination;
     private Button button_toggle_state;
     private Button button_update;
-
-    private short diff_fields = 0;
+    private boolean suppressDraftEvents = false;
+    private boolean pendingUpdate = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_trip_simulation);
-        loadOriginals();
-
         label_trip_origin = (TextView) findViewById(R.id.label_trip_origin);
         input_trip_origin = (TextView) findViewById(R.id.input_trip_origin);
         input_trip_waypoints = (TextView) findViewById(R.id.input_trip_waypoints);
@@ -72,274 +55,190 @@ implements RuntimePermissionsListener {
         input_trip_path_amplitude = (TextView) findViewById(R.id.input_trip_path_amplitude);
         input_trip_path_cycles = (TextView) findViewById(R.id.input_trip_path_cycles);
         input_trip_path_wraps = (TextView) findViewById(R.id.input_trip_path_wraps);
-        button_paste_trip_origin = (Button) findViewById(R.id.button_paste_trip_origin);
-        button_paste_trip_waypoints = (Button) findViewById(R.id.button_paste_trip_waypoints);
-        button_paste_trip_destination = (Button) findViewById(R.id.button_paste_trip_destination);
         button_toggle_state = (Button) findViewById(R.id.button_toggle_state);
         button_update = (Button) findViewById(R.id.button_update);
 
-        input_trip_origin.addTextChangedListener(new SimpleWatcher() {
-            public void afterTextChanged(Editable s) {
-                label_trip_origin.setVisibility(View.GONE);
-                if (!LocationService.isTripModeStarted()) return;
-                try {
-                    LocPoint value = new LocPoint(s.toString());
-                    diff_fields = TripEditState.update(diff_fields, TripEditState.ORIGIN_MASK, !originalLocOrigin.equals(value));
-                    checkDiff();
-                } catch(Exception e) {}
-            }
-        });
-
-        input_trip_waypoints.addTextChangedListener(new SimpleWatcher() {
-            public void afterTextChanged(Editable s) {
-                if (!LocationService.isTripModeStarted()) return;
-                String value = TripWaypointCodec.normalize(s.toString());
-                diff_fields = TripEditState.update(diff_fields, TripEditState.WAYPOINTS_MASK, !originalWaypointsText.equals(value));
-                checkDiff();
-            }
-        });
-
-        input_trip_destination.addTextChangedListener(new SimpleWatcher() {
-            public void afterTextChanged(Editable s) {
-                label_trip_destination.setVisibility(View.GONE);
-                if (!LocationService.isTripModeStarted()) return;
-                try {
-                    LocPoint value = new LocPoint(s.toString());
-                    diff_fields = TripEditState.update(diff_fields, TripEditState.DESTINATION_MASK, !originalLocDestination.equals(value));
-                    checkDiff();
-                } catch(Exception e) {}
-            }
-        });
-
-        input_trip_duration.addTextChangedListener(new SimpleWatcher() {
-            public void afterTextChanged(Editable s) {
-                if (!LocationService.isTripModeStarted()) return;
-                try {
-                    int value = Integer.parseInt(s.toString(), 10);
-                    diff_fields = TripEditState.update(diff_fields, TripEditState.DURATION_MASK, originalTripDuration != value);
-                    checkDiff();
-                } catch(Exception e) {}
-            }
-        });
-
-        input_trip_path_amplitude.addTextChangedListener(new SimpleWatcher() {
-            public void afterTextChanged(Editable s) {
-                if (!LocationService.isTripModeStarted()) return;
-                try {
-                    double value = TripPathGenerator.sanitizeAmplitude(Double.parseDouble(s.toString().replace(',', '.')));
-                    diff_fields = TripEditState.update(diff_fields, TripEditState.PATH_AMPLITUDE_MASK, Math.abs(originalPathAmplitude - value) > 1e-9d);
-                    checkDiff();
-                } catch(Exception e) {}
-            }
-        });
-
-        input_trip_path_cycles.addTextChangedListener(new SimpleWatcher() {
-            public void afterTextChanged(Editable s) {
-                if (!LocationService.isTripModeStarted()) return;
-                try {
-                    int value = TripPathGenerator.sanitizeCycles(Integer.parseInt(s.toString(), 10));
-                    diff_fields = TripEditState.update(diff_fields, TripEditState.PATH_CYCLES_MASK, originalPathCycles != value);
-                    checkDiff();
-                } catch(Exception e) {}
-            }
-        });
-
-        input_trip_path_wraps.addTextChangedListener(new SimpleWatcher() {
-            public void afterTextChanged(Editable s) {
-                if (!LocationService.isTripModeStarted()) return;
-                try {
-                    int value = TripPathGenerator.sanitizeWraps(Integer.parseInt(s.toString(), 10));
-                    diff_fields = TripEditState.update(diff_fields, TripEditState.PATH_WRAPS_MASK, originalPathWraps != value);
-                    checkDiff();
-                } catch(Exception e) {}
-            }
-        });
-
-        input_trip_path_type.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (!LocationService.isTripModeStarted()) return;
-                int value = TripPathGenerator.sanitizeType(position);
-                diff_fields = TripEditState.update(diff_fields, TripEditState.PATH_TYPE_MASK, originalPathType != value);
-                checkDiff();
-            }
-            public void onNothingSelected(AdapterView<?> parent) {}
-        });
-
-        button_paste_trip_origin.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { pasteSingleCoordinate(input_trip_origin); }
-        });
-        button_paste_trip_waypoints.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { pasteWaypointList(); }
-        });
-        button_paste_trip_destination.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { pasteSingleCoordinate(input_trip_destination); }
-        });
+        TripDraftPrefs.ensureInitialized(this);
+        loadDraftIntoUi();
+        installDraftListeners();
 
         button_toggle_state.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 if (LocationService.isTripModeStarted()) {
+                    saveDraftFromUi(TripDraftPrefs.isDirty(TripSimulationActivity.this));
                     LocationService.doStop(TripSimulationActivity.this, true);
-                    button_toggle_state.setText(R.string.label_button_start);
-                    button_update.setVisibility(View.GONE);
+                    TripDraftPrefs.setDirty(TripSimulationActivity.this, false);
+                    pendingUpdate = false;
+                    updateButtons();
                 } else {
-                    requestPermissions();
+                    requestPermissions(false);
                 }
             }
         });
 
         button_update.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (LocationService.isTripModeStarted()) requestPermissions();
-                else button_update.setVisibility(View.GONE);
+                if (LocationService.isTripModeStarted() && TripDraftPrefs.isDirty(TripSimulationActivity.this)) {
+                    requestPermissions(true);
+                }
             }
         });
+        updateButtons();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        LocPoint origin = SharedPrefs.getTripOrigin(this);
-        LocPoint destination = SharedPrefs.getTripDestination(this);
-        int duration = SharedPrefs.getTripDuration(this);
-        int pathType = TripPathPrefs.getType(this);
-        double amplitude = TripPathPrefs.getAmplitude(this);
-        int cycles = TripPathPrefs.getCycles(this);
-        int wraps = TripPathPrefs.getWraps(this);
-        String waypoints = TripPathPrefs.getWaypointsText(this);
-
-        if (!LocationService.isTripModeStarted()) {
-            originalLocOrigin = origin;
-            originalLocDestination = destination;
-            originalTripDuration = duration;
-            originalPathType = pathType;
-            originalPathAmplitude = amplitude;
-            originalPathCycles = cycles;
-            originalPathWraps = wraps;
-            originalWaypointsText = waypoints;
-            diff_fields = 0;
-        }
-        reset(origin, destination, duration, pathType, amplitude, cycles, wraps, waypoints);
+        // V14: never overwrite the editor from saved active settings here.
+        updateButtons();
     }
 
-    private void loadOriginals() {
-        originalLocOrigin = SharedPrefs.getTripOrigin(this);
-        originalLocDestination = SharedPrefs.getTripDestination(this);
-        originalTripDuration = SharedPrefs.getTripDuration(this);
-        originalPathType = TripPathPrefs.getType(this);
-        originalPathAmplitude = TripPathPrefs.getAmplitude(this);
-        originalPathCycles = TripPathPrefs.getCycles(this);
-        originalPathWraps = TripPathPrefs.getWraps(this);
-        originalWaypointsText = TripPathPrefs.getWaypointsText(this);
+    @Override
+    protected void onPause() {
+        saveDraftFromUi(LocationService.isTripModeStarted() && TripDraftPrefs.isDirty(this));
+        super.onPause();
     }
 
-    private void reset(LocPoint origin, LocPoint destination, int duration, int pathType, double amplitude, int cycles, int wraps, String waypoints) {
-        label_trip_origin.setVisibility(View.GONE);
-        label_trip_destination.setVisibility(View.GONE);
-        input_trip_origin.setText(origin.toString());
-        input_trip_waypoints.setText(TripWaypointCodec.normalize(waypoints));
-        input_trip_destination.setText(destination.toString());
-        input_trip_duration.setText(Integer.toString(duration, 10));
-        input_trip_path_type.setSelection(TripPathGenerator.sanitizeType(pathType));
-        input_trip_path_amplitude.setText(Double.toString(TripPathGenerator.sanitizeAmplitude(amplitude)));
-        input_trip_path_cycles.setText(Integer.toString(TripPathGenerator.sanitizeCycles(cycles), 10));
-        input_trip_path_wraps.setText(Integer.toString(TripPathGenerator.sanitizeWraps(wraps), 10));
-
-        BookmarkItem item = SharedPrefs.getBookmarkItem(this, origin);
-        if (item != null) {
-            label_trip_origin.setText(item.title);
-            label_trip_origin.setVisibility(View.VISIBLE);
-        }
-        item = SharedPrefs.getBookmarkItem(this, destination);
-        if (item != null) {
-            label_trip_destination.setText(item.title);
-            label_trip_destination.setVisibility(View.VISIBLE);
-        }
-
-        if (LocationService.isTripModeStarted()) {
-            button_toggle_state.setText(R.string.label_button_stop);
-            checkDiff();
-        } else {
-            button_toggle_state.setText(R.string.label_button_start);
-            button_update.setVisibility(View.GONE);
+    private void loadDraftIntoUi() {
+        suppressDraftEvents = true;
+        try {
+            label_trip_origin.setVisibility(View.GONE);
+            label_trip_destination.setVisibility(View.GONE);
+            input_trip_origin.setText(TripDraftPrefs.getOrigin(this));
+            input_trip_waypoints.setText(TripDraftPrefs.getWaypoints(this));
+            input_trip_destination.setText(TripDraftPrefs.getDestination(this));
+            input_trip_duration.setText(TripDraftPrefs.getDuration(this));
+            input_trip_path_type.setSelection(TripDraftPrefs.getType(this));
+            input_trip_path_amplitude.setText(TripDraftPrefs.getAmplitude(this));
+            input_trip_path_cycles.setText(TripDraftPrefs.getCycles(this));
+            input_trip_path_wraps.setText(TripDraftPrefs.getWraps(this));
+            refreshBookmarkLabels();
+        } finally {
+            suppressDraftEvents = false;
         }
     }
 
-    private void checkDiff() {
-        button_update.setVisibility((diff_fields == 0) ? View.GONE : View.VISIBLE);
+    private void installDraftListeners() {
+        input_trip_origin.addTextChangedListener(new DraftWatcher() {
+            public void afterTextChanged(Editable s) { label_trip_origin.setVisibility(View.GONE); draftChanged(); }
+        });
+        input_trip_waypoints.addTextChangedListener(new DraftWatcher() {
+            public void afterTextChanged(Editable s) { draftChanged(); }
+        });
+        input_trip_destination.addTextChangedListener(new DraftWatcher() {
+            public void afterTextChanged(Editable s) { label_trip_destination.setVisibility(View.GONE); draftChanged(); }
+        });
+        input_trip_duration.addTextChangedListener(new DraftWatcher() { public void afterTextChanged(Editable s) { draftChanged(); } });
+        input_trip_path_amplitude.addTextChangedListener(new DraftWatcher() { public void afterTextChanged(Editable s) { draftChanged(); } });
+        input_trip_path_cycles.addTextChangedListener(new DraftWatcher() { public void afterTextChanged(Editable s) { draftChanged(); } });
+        input_trip_path_wraps.addTextChangedListener(new DraftWatcher() { public void afterTextChanged(Editable s) { draftChanged(); } });
+        input_trip_path_type.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) { draftChanged(); }
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
     }
 
-    private void requestPermissions() {
+    private void draftChanged() {
+        if (suppressDraftEvents) return;
+        boolean active = LocationService.isTripModeStarted();
+        saveDraftFromUi(active || TripDraftPrefs.isDirty(this));
+        updateButtons();
+    }
+
+    private void saveDraftFromUi(boolean dirty) {
+        if (input_trip_origin == null) return;
+        TripDraftPrefs.save(this,
+            input_trip_origin.getText().toString(),
+            input_trip_waypoints.getText().toString(),
+            input_trip_destination.getText().toString(),
+            input_trip_duration.getText().toString(),
+            input_trip_path_type.getSelectedItemPosition(),
+            input_trip_path_amplitude.getText().toString(),
+            input_trip_path_cycles.getText().toString(),
+            input_trip_path_wraps.getText().toString(),
+            dirty
+        );
+    }
+
+    private void refreshBookmarkLabels() {
+        try {
+            LocPoint origin = requirePoint(input_trip_origin.getText().toString(), "Origin");
+            BookmarkItem item = SharedPrefs.getBookmarkItem(this, origin);
+            if (item != null) { label_trip_origin.setText(item.title); label_trip_origin.setVisibility(View.VISIBLE); }
+        } catch (Exception ignored) {}
+        try {
+            LocPoint destination = requirePoint(input_trip_destination.getText().toString(), "Destination");
+            BookmarkItem item = SharedPrefs.getBookmarkItem(this, destination);
+            if (item != null) { label_trip_destination.setText(item.title); label_trip_destination.setVisibility(View.VISIBLE); }
+        } catch (Exception ignored) {}
+    }
+
+    private void updateButtons() {
+        boolean active = LocationService.isTripModeStarted();
+        button_toggle_state.setText(active ? R.string.label_button_stop : R.string.label_button_start);
+        button_update.setVisibility(active ? View.VISIBLE : View.GONE);
+        button_update.setEnabled(active && TripDraftPrefs.isDirty(this));
+    }
+
+    private void requestPermissions(boolean update) {
+        pendingUpdate = update;
         boolean granted = RuntimePermissions.hasMandatoryPermissions(this);
-        if (TripStartPermissionPolicy.shouldStartImmediately(granted)) {
-            doStart();
-            return;
-        }
+        if (TripStartPermissionPolicy.shouldStartImmediately(granted)) { doStart(); return; }
         RuntimePermissionsRequester requester = (RuntimePermissionsRequester) getParent();
         requester.requestTripRuntimePermissions(this);
     }
 
-    private String clipboardText() {
-        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        if (clipboard == null || !clipboard.hasPrimaryClip() || clipboard.getPrimaryClip() == null || clipboard.getPrimaryClip().getItemCount() == 0) return "";
-        CharSequence value = clipboard.getPrimaryClip().getItemAt(0).coerceToText(this);
-        return value == null ? "" : value.toString();
-    }
-
-    private void pasteSingleCoordinate(TextView target) {
-        LocPoint point = TripWaypointCodec.first(clipboardText());
-        if (point == null) {
-            Toast.makeText(this, "No latitude, longitude pair found in clipboard.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        target.setText(point.toString());
-    }
-
-    private void pasteWaypointList() {
-        String value = TripWaypointCodec.normalize(clipboardText());
-        if (value.isEmpty()) {
-            Toast.makeText(this, "No waypoint coordinates found in clipboard.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        input_trip_waypoints.setText(value);
-    }
-
+    @Override
     public void doStart() {
+        boolean update = pendingUpdate && LocationService.isTripModeStarted();
+        pendingUpdate = false;
         try {
-            LocPoint origin = new LocPoint(input_trip_origin.getText().toString());
-            LocPoint destination = new LocPoint(input_trip_destination.getText().toString());
-            int duration = Integer.parseInt(input_trip_duration.getText().toString(), 10);
+            LocPoint destination = requirePoint(input_trip_destination.getText().toString(), "Destination");
+            int duration = requirePositiveInt(input_trip_duration.getText().toString(), "Duration");
             int pathType = TripPathGenerator.sanitizeType(input_trip_path_type.getSelectedItemPosition());
-            double amplitude = TripPathGenerator.sanitizeAmplitude(Double.parseDouble(input_trip_path_amplitude.getText().toString().replace(',', '.')));
-            int cycles = TripPathGenerator.sanitizeCycles(Integer.parseInt(input_trip_path_cycles.getText().toString(), 10));
-            int wraps = TripPathGenerator.sanitizeWraps(Integer.parseInt(input_trip_path_wraps.getText().toString(), 10));
+            double amplitude = TripPathGenerator.sanitizeAmplitude(Double.parseDouble(cleanNumber(input_trip_path_amplitude.getText().toString())));
+            int cycles = TripPathGenerator.sanitizeCycles(Integer.parseInt(input_trip_path_cycles.getText().toString().trim(), 10));
+            int wraps = TripPathGenerator.sanitizeWraps(Integer.parseInt(input_trip_path_wraps.getText().toString().trim(), 10));
             String rawWaypoints = input_trip_waypoints.getText().toString();
             String waypoints = TripWaypointCodec.normalize(rawWaypoints);
             if (!rawWaypoints.trim().isEmpty() && waypoints.isEmpty()) throw new NumberFormatException("No valid waypoint coordinates");
 
-            LocationService.doStart(this, true, origin, destination, duration, pathType, amplitude, cycles, wraps, waypoints);
-            SharedPrefs.putTripOrigin(this, origin);
-            SharedPrefs.putTripDestination(this, destination);
-            SharedPrefs.putTripDuration(this, duration);
+            if (update) {
+                if (LocationService.doUpdateTrip(this, true, destination, duration, pathType, amplitude, cycles, wraps, waypoints) == null)
+                    throw new IllegalStateException("Trip is no longer active");
+                SharedPrefs.putTripDestination(this, destination);
+                SharedPrefs.putTripDuration(this, duration);
+            } else {
+                LocPoint origin = requirePoint(input_trip_origin.getText().toString(), "Origin");
+                LocationService.doStart(this, true, origin, destination, duration, pathType, amplitude, cycles, wraps, waypoints);
+                SharedPrefs.putTripOrigin(this, origin);
+                SharedPrefs.putTripDestination(this, destination);
+                SharedPrefs.putTripDuration(this, duration);
+            }
             TripPathPrefs.save(this, pathType, amplitude, cycles, wraps, waypoints);
-
-            originalLocOrigin = origin;
-            originalLocDestination = destination;
-            originalTripDuration = duration;
-            originalPathType = pathType;
-            originalPathAmplitude = amplitude;
-            originalPathCycles = cycles;
-            originalPathWraps = wraps;
-            originalWaypointsText = waypoints;
-            diff_fields = 0;
-            button_toggle_state.setText(R.string.label_button_stop);
-            button_update.setVisibility(View.GONE);
-        }
-        catch (Exception e) {
-            Toast.makeText(this, "Could not start Trip: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            saveDraftFromUi(false);
+            TripDraftPrefs.setDirty(this, false);
+            updateButtons();
+        } catch (Exception e) {
+            Toast.makeText(this, (update ? "Could not update Trip: " : "Could not start Trip: ") + e.getMessage(), Toast.LENGTH_LONG).show();
+            updateButtons();
         }
     }
 
-    private abstract static class SimpleWatcher implements TextWatcher {
+    private static LocPoint requirePoint(String raw, String name) {
+        LocPoint point = TripWaypointCodec.first(TripWaypointCodec.cleanupNumericWhitespace(raw));
+        if (point == null) throw new NumberFormatException(name + " must be latitude, longitude");
+        return point;
+    }
+    private static int requirePositiveInt(String raw, String name) {
+        int value = Integer.parseInt(raw.trim(), 10);
+        if (value <= 0) throw new NumberFormatException(name + " must be greater than 0");
+        return value;
+    }
+    private static String cleanNumber(String raw) {
+        return TripWaypointCodec.cleanupNumericWhitespace(raw).trim().replace(',', '.');
+    }
+    private abstract static class DraftWatcher implements TextWatcher {
         public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
         public void onTextChanged(CharSequence s, int start, int before, int count) {}
     }
